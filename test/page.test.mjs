@@ -1,0 +1,169 @@
+// node test/page.test.mjs: seed/scripts/page.js with a fake page (keys, scrolling, the 全屏 quick reply, message frames out of view)
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+
+const listeners = {};
+const scrolled = [];
+const requests = [];
+const pressed = [];
+const element = (tag, attrs = {}) => ({ tagName: tag, id: "", textContent: "", isConnected: true, removed: false, remove() { this.removed = true; }, ...attrs });
+const fakeFrame = (id) => {
+  const handlers = [];
+  const inner = {
+    keydown: [],
+    head: { children: [], append(child) { this.children.push(child); } },
+    getElementById(wanted) { return this.head.children.find((c) => c.id === wanted && !c.removed) ?? null; },
+    createElement: (tag) => element(tag),
+    addEventListener(type, fn) { if (type === "keydown") this.keydown.push(fn); },
+    removeEventListener() {},
+  };
+  return { ...element("IFRAME", { id }), contentDocument: inner, addEventListener: (type, fn) => handlers.push(fn), load: () => handlers.forEach((fn) => fn()), inner };
+};
+const message = fakeFrame("TH-message--0--0");
+const script = fakeFrame("TH-script--x--1");
+let intersect;
+let mutate;
+let syncStop;
+const created = [];
+const stopBox = { width: 0, right: 380, top: 740 };
+const stopButton = { getBoundingClientRect: () => stopBox };
+const events = {};
+const intervals = [];
+const cleared = [];
+let now = 1_000_000;
+const doc = {
+  body: { append() {} },
+  head: { append() {} },
+  defaultView: { innerWidth: 400, innerHeight: 800 },
+  createElement: (tag) => (created.push(element(tag, { style: {} })), created.at(-1)),
+  fullscreenElement: null,
+  documentElement: { requestFullscreen: async (options) => requests.push(options) },
+  exitFullscreen: async () => requests.push("exit"),
+  querySelectorAll: (selector) => (selector === "iframe" ? [message, script] : []),
+  getElementById: (id) => ({ chat: { clientHeight: 1000, scrollBy: (options) => scrolled.push(options.top) }, mes_stop: stopButton })[id] ?? null,
+  addEventListener: (type, handler) => (listeners[type] ??= []).push(handler),
+  removeEventListener: (type, handler) => (listeners[type] = listeners[type].filter((h) => h !== handler)),
+};
+runInNewContext(readFileSync(new URL("../seed/scripts/page.js", import.meta.url), "utf8"), {
+  console,
+  window: {
+    parent: {
+      document: doc,
+      toastr: { warning() {}, error() {} },
+      quickReplyApi: {
+        getQrByLabel: (set, id) => (set === "quick-replies" ? { label: { 2: "代写", 3: "更多", 4: "全屏" }[id] } : undefined),
+        executeQuickReply: async (set, id) => pressed.push([set, id]),
+      },
+    },
+    addEventListener() {},
+  },
+  IntersectionObserver: class { constructor(cb) { intersect = cb; } observe() {} unobserve() {} disconnect() {} },
+  MutationObserver: class {
+    constructor(cb) { this.cb = cb; }
+    observe(target) { if (target === stopButton) syncStop = this.cb; else mutate = this.cb; }
+    disconnect() {}
+  },
+  eventOn: (type, handler) => (events[type] = handler),
+  tavern_events: { STREAM_TOKEN_RECEIVED: "stream_token_received" },
+  Date: { now: () => now },
+  setInterval: (fn) => intervals.push(fn),
+  clearInterval: (id) => cleared.push(id),
+});
+
+// --- keys
+const key = (code, extra = {}, handlers = listeners.keydown) => {
+  const event = { code, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, repeat: false, target: { closest: () => null }, prevented: false, preventDefault() { this.prevented = true; }, ...extra };
+  handlers.forEach((handler) => handler(event));
+  return event;
+};
+assert.equal(key("Period", { altKey: true }).prevented, true);
+assert.deepEqual(scrolled, [400], "Alt+. scrolls down by 0.4 of the chat height");
+key("Comma", { altKey: true });
+assert.deepEqual(scrolled, [400, -400]);
+key("Period", { altKey: true, repeat: true });
+assert.equal(scrolled.length, 2, "holding the key acts once");
+key("Period");
+assert.equal(scrolled.length, 3, "a plain . scrolls when nothing is being typed");
+key("Period", { target: { closest: () => ({}) } });
+assert.equal(scrolled.length, 3, "and types a . while a text field has the focus");
+assert.equal(key("Period", { shiftKey: true }).prevented, false, "Shift+. is a > and left alone");
+key("Slash", { altKey: true });
+assert.deepEqual(JSON.parse(JSON.stringify(pressed)), [["quick-replies", 2]], "Alt+/ runs the 代写 quick reply through SillyTavern's API, by its id");
+assert.equal(message.inner.keydown.length, 1, "a message frame has the key listener too: key events inside it never reach the page");
+key("Period", { altKey: true }, message.inner.keydown);
+assert.equal(scrolled.length, 4, "and it scrolls the page's chat");
+assert.equal(script.inner.keydown.length, 1, "every frame, not only the messages");
+
+// --- fullscreen
+const click = (label) => {
+  const button = { querySelector: () => ({ textContent: ` ${label} ` }) };
+  listeners.click.forEach((handler) => handler({ target: { closest: (selector) => (selector === ".qr--button" ? button : null) } }));
+};
+click("更多");
+assert.deepEqual(requests, [], "other quick replies are left alone");
+click("全屏");
+assert.deepEqual(JSON.parse(JSON.stringify(requests)), [{ navigationUI: "hide" }], "the 全屏 quick reply asks for fullscreen inside its own click");
+doc.fullscreenElement = {};
+click("全屏");
+assert.equal(requests.at(-1), "exit", "and leaves it the next time");
+listeners.click.forEach((handler) => handler({ target: {} }));
+assert.equal(requests.length, 2, "a click on something that is no button is ignored");
+
+// --- message frames out of view
+const paused = (frame) => frame.inner.getElementById("pause-offscreen-animations");
+assert.equal(paused(message), null, "a frame is left running until it is known to be off screen");
+intersect([{ target: message, isIntersecting: false }]);
+assert.match(paused(message).textContent, /animation-play-state:paused/, "off screen: animations paused");
+intersect([{ target: message, isIntersecting: false }]);
+assert.equal(message.inner.head.children.length, 1, "no second style for the same frame");
+intersect([{ target: message, isIntersecting: true }]);
+assert.equal(paused(message), null, "back on screen: running again");
+intersect([{ target: message, isIntersecting: false }]);
+message.inner.head.children.length = 0;
+message.load();
+assert.ok(paused(message), "a re-rendered message (new document) is paused again while it is off screen");
+const added = fakeFrame("TH-message--1--0");
+mutate([{ addedNodes: [added] }]);
+intersect([{ target: added, isIntersecting: false }]);
+assert.ok(paused(added), "a frame added later is watched too");
+assert.equal(paused(script), null, "only message frames are touched");
+assert.equal(added.inner.keydown.length, 1, "and gets the key listener");
+
+// --- the pill above the stop button
+const [style, pill] = created;
+assert.match(style.textContent, /#page-generating \{/, "the pill's own style");
+assert.equal(pill.id, "page-generating");
+assert.equal(pill.style.display, undefined, "nothing is shown before the first change");
+syncStop();
+assert.equal(intervals.length, 0, "no stop button on screen: no clock");
+stopBox.width = 40;
+syncStop();
+assert.equal(pill.style.display, "flex", "the stop button appears: a reply is being written");
+assert.deepEqual([pill.textContent, pill.style.left, pill.style.top], ["0s", "380px", "734px"], "the pill's corner goes to the stop button's top right corner, 6px up");
+assert.match(style.textContent, /transform: translate\(-100%, -100%\)/, "and the pill lies up and to the left of that corner");
+assert.deepEqual([pill.style.right, pill.style.bottom], [undefined, undefined], "placed by left/top only: right/bottom put it off screen on the phone");
+const after = (seconds, text, why) => {
+  now += seconds * 1000;
+  intervals[0]();
+  assert.equal(pill.textContent, text, why);
+};
+after(12.4, "12s", "before the first chunk there is only the time, however long it takes");
+events.stream_token_received("字".repeat(1240));
+after(0, "12s · 1240 字", "the characters streamed so far");
+after(4, "16s · 1240 字", "a short pause is no stall");
+after(2, "无新内容 6s", "nothing new for 5 seconds: only how long, instead of the elapsed time and the characters");
+after(3, "无新内容 9s", "and it keeps counting");
+events.stream_token_received("字".repeat(1300));
+after(0, "21s · 1300 字", "text flows again: back to the elapsed time, which never stopped, and the characters");
+after(5, "无新内容 5s", "the next stall counts from its own start");
+events.stream_token_received("字".repeat(1300));
+after(1, "无新内容 6s", "the same text again is not new");
+stopBox.width = 0;
+syncStop();
+assert.deepEqual([pill.style.display, cleared.length], ["none", 2], "the stop button goes away: the pill hides and the clock stops");
+events.stream_token_received("x".repeat(50));
+stopBox.width = 40;
+syncStop();
+assert.equal(pill.textContent, "0s", "the next reply starts from zero, with no characters yet");
+console.log("page tests passed");

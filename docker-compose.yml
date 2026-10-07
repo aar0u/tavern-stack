@@ -1,0 +1,88 @@
+# Start it with ./st.sh: it sets ST_DATA_DIR and makes the directories under $SCRATCH, which compose would otherwise create root-owned.
+
+name: st
+
+networks:
+  default:
+    name: localmesh
+    external: true
+
+# All state lives under $SCRATCH/st (ramdisk), chats included. ST_DATA_DIR is set by st.sh.
+services:
+  # SillyTavern's chat API is always http://gateway:8789/v1, which is this gateway: ./gateway.mjs in front of any OpenAI-compatible upstream.
+  # Address, key, model and request tweaks come from .gateway.env. The upstream is a container of its own (leyline, ...) on the network
+  # "localmesh", reached by its name, a program on the host (host.docker.internal), or a service on the internet; nothing here knows which.
+  gateway:
+    container_name: gateway
+    image: node:22-alpine
+    user: "1000:1000"
+    command: ["node", "/app/gateway.mjs"]
+    env_file: .gateway.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - HOST=0.0.0.0
+    volumes:
+      - "./gateway.mjs:/app/gateway.mjs:ro"
+    ports:
+      - "0.0.0.0:8789:8789"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8789/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    stop_grace_period: 20s
+    restart: "no"
+
+  # One-shot: applies ./seed (settings.json merged in, QuickReplies copied over) before SillyTavern starts.
+  st-init:
+    container_name: st-init
+    image: ghcr.io/sillytavern/sillytavern:latest
+    user: "1000:1000"
+    entrypoint: ["sh", "/init.sh"]
+    volumes:
+      - "./init.sh:/init.sh:ro"
+      - "./merge-settings.mjs:/merge-settings.mjs:ro"
+      - "./seed:/seed:ro"
+      - "${ST_DATA_DIR:-./data}:/home/node/app/data"
+      - "${SCRATCH:?}/st/plugins:/home/node/app/plugins"
+      - "${SCRATCH:?}/st/extensions:/home/node/app/public/scripts/extensions/third-party"
+    restart: "no"
+
+  sillytavern:
+    container_name: sillytavern
+    hostname: sillytavern
+    image: ghcr.io/sillytavern/sillytavern:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      st-init:
+        condition: service_completed_successfully
+    environment:
+      - NODE_ENV=production
+      - FORCE_COLOR=1
+      - SILLYTAVERN_HEARTBEATINTERVAL=30
+      - SILLYTAVERN_ENABLESERVERPLUGINS=true   # for the Edge TTS plugin installed by st-init
+      - PUID=1000
+      - PGID=1000
+      # 172.16.0.0/12 covers all Docker bridge networks; ST_LAN_CIDR is the LAN that may reach it (phone).
+      - 'SILLYTAVERN_WHITELIST=["127.0.0.1","::1","172.16.0.0/12","${ST_LAN_CIDR:-192.168.0.0/16}"]'
+      # - SILLYTAVERN_BASICAUTHMODE=true
+      # - SILLYTAVERN_BASICAUTHUSER_USERNAME=user
+      # - SILLYTAVERN_BASICAUTHUSER_PASSWORD=change-me
+    ports:
+      - "8000:8000"
+    volumes:
+      - "${SCRATCH:?}/st/config:/home/node/app/config"
+      - "${ST_DATA_DIR:-./data}:/home/node/app/data"
+      - "${SCRATCH:?}/st/plugins:/home/node/app/plugins"
+      - "${SCRATCH:?}/st/extensions:/home/node/app/public/scripts/extensions/third-party"
+    healthcheck:
+      test: ["CMD", "node", "src/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    # Not at boot: the bind sources are on the ramdisk, empty then, and dockerd starts before any shell (st.sh) can mkdir them,
+    # so the daemon would create them root-owned. st.sh starts it.
+    restart: "no"

@@ -1,0 +1,83 @@
+{
+    "firstRun": false,
+    "main_api": "openai",
+    "username": "齐野",
+    "user_avatar": "user-default.png",
+    "oai_settings": {
+        "chat_completion_source": "custom",
+        "custom_url": "http://gateway:8789/v1"
+    },
+    "power_user": {
+        "auto_connect": true,
+        "default_persona": "user-default.png",
+        "personas": {
+            "user-default.png": "齐野"
+        },
+        "persona_descriptions": {
+            "user-default.png": {
+                "description": "",
+                "position": 0
+            }
+        }
+    },
+    "extension_settings": {
+        "story": {
+            "pictures": true
+        },
+        "tts": {
+            "currentProvider": "Edge",
+            "enabled": true,
+            "ttsEnabled": true,
+            "auto_generation": false,
+            "narrate_user": false,
+            "narrate_quoted_only": false,
+            "multi_voice_enabled": true,
+            "periodic_auto_generation": false,
+            "skip_codeblocks": true,
+            "apply_regex": true,
+            "skip_tags": false,
+            "regex_pattern": "/<!--[\\s\\S]*?-->|<(?!(?:content|now_plot)\\b)([\\w-]+)\\b[^>]*>[\\s\\S]*?<\\/\\1>|<[\\w-]+\\s*\\/>|<\\/?(?:content|now_plot)>|^#{1,6}[ \\t].*$/gim",
+            "Edge": {
+                "voiceMap": {
+                    "[Default Voice]": "zh-CN-XiaoxiaoNeural"
+                },
+                "rate": 0,
+                "provider": "plugin"
+            }
+        },
+        "quickReplyV2": {
+            "isEnabled": true,
+            "isCombined": false,
+            "isPopout": false,
+            "config": {
+                "setList": [
+                    {
+                        "set": "quick-replies",
+                        "isVisible": true
+                    }
+                ]
+            }
+        },
+        "sd": {
+            "source": "sdcpp",
+            "sdcpp_url": "http://host.docker.internal:1234",
+            "comfy_url": "http://host.docker.internal:8188/",
+            "comfy_workflow": "a1.json",
+            "comfy_type": "standard",
+            "auto_url": "http://host.docker.internal:7860",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 8,
+            "scale": 1,
+            "free_extend": false,
+            "negative_prompt": "censored, mosaic, bar censor, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, deformed, disfigured, mutated, extra fingers, fewer fingers, extra limbs, poorly drawn face, ugly, duplicate, cloned face, long neck, out of frame",
+            "styles": [
+                {
+                    "name": "Default",
+                    "prefix": "best quality, absurdres, masterpiece,",
+                    "negative": "censored, mosaic, bar censor, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, deformed, disfigured, mutated, extra fingers, fewer fingers, extra limbs, poorly drawn face, ugly, duplicate, cloned face, long neck, out of frame"
+                }
+            ]
+        }
+    }
+}

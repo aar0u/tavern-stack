@@ -1,0 +1,20 @@
+# Antigravity CLI in a throwaway container, for logging in and using it by hand (not part of the ST stack).
+#   docker compose -f tools/agy/docker-compose.yml run --rm agy      installs the CLI every time, then a shell: run `agy`
+# Google's installer (antigravity.google/cli/install.sh) wants bash (#!/bin/bash), uses wget when there is no curl, and has a musl build,
+# so plain alpine will do. It installs to ~/.local/bin (it ignored --dir when tried), so that is put on PATH here. Its "ERROR: logging
+# before google.Init: I…" lines are Info messages of Google's logger, not errors. Only the login/state survives, in ./gemini-data
+# (root-owned files, keep the directory out of git).
+name: agy
+
+services:
+  agy:
+    image: alpine:3
+    stdin_open: true
+    tty: true
+    working_dir: /work
+    volumes:
+      - "./gemini-data:/root/.gemini"
+    command:
+      - sh
+      - -c
+      - 'apk add -q --no-cache bash wget && wget -qO- https://antigravity.google/cli/install.sh | bash; export PATH="$$HOME/.local/bin:$$PATH"; exec sh'
