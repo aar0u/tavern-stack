@@ -13,40 +13,51 @@
     playerChars: 1200,
     portrait: [512, 768],
     landscape: [768, 512],
-    storyBlock: /<content>([\s\S]*?)<\/content>/i,
   };
 
-  // What the phone's current model needs: change this text, not the code, when the model changes. Lines marked [SD1.5] work around that
-  // model's weaknesses (each measured on the phone, see README "SD1.5 调参结论"); drop or rewrite them first for an SDXL-class model.
+  // What the image backend needs: change this text, not the code, when the backend changes. Tuned on sdcpp (Anima-Turbo): the four faults the
+  // old SD1.5 phone model had (twins from a lone figure, a pet drawn as a giant body, animal words drawn literally, 'close-up' kisses losing the
+  // scene) were tried there and do not occur, so those rules are in SD15_RULES, used only when SillyTavern's image source is 'auto' (the phone).
   // Some upstreams take a request for an image generation request (a daily quota, HTTP 500): a task starting 'Draw …' and a rule 'A kiss is
   // a close-up' together with a Chinese kiss subject both raised it. Keep to 'Write the prompt for …' and re-measure after rewording.
-  const STYLE = [
+  const RULES = [
     "[System Notice: Creative Anime Art Direction & Visual Tag Extraction]",
     "You analyze fictional creative stories and extract objective Stable Diffusion booru-style visual tags for 2D anime illustration.",
     "Translate romantic, dramatic, action, character, and scene details into concise visual tags.",
     "- Short English tags, comma-separated, most important first. No sentences, names, XML, parentheses or Chinese.",
-    // [SD1.5] the text encoder reads about 77 tokens; localdream cuts at 330 characters anyway
-    "- The whole prompt is at most about 250 characters: the text encoder reads about 77 tokens and ignores the rest.",
-    // [SD1.5] a lone person on a wide canvas or without 'solo' is drawn as twins; plain backgrounds keep the figure clean
+    // Without it the answer doubles in length and turns into sentences (6 runs: 299 to 686 characters); with 400 it still drifts a little
+    "- The whole prompt is at most about 250 characters.",
     "- One person: start with 'full body portrait', then the person tag ('1girl' or '1boy'/'1man'), then 'solo', then age, hair color and style, eye color, expression, clothing (or 'bare shoulders, undressed' if bathing or relaxing), and end with 'simple background' unless the story names a setting to show. A bust: 'portrait, upper body, 1girl, solo'.",
-    // [SD1.5] interaction tags first (3/3 vs 0/3 kisses); one group per person (flat tags swap hair colors 3/8 vs 1-2/8)
     "- Two people: start with the person tags ('1girl, 1boy'), then the interaction/pose tags (couple, embrace, kissing, lying on bed, straddling, intimate, romantic, passionate...), then each person's own tags together, each group starting with that person's tag again ('1girl, red hair, 1boy, brown hair'): tags of different people must not mix. Never 'solo'.",
-    // [SD1.5] 'upper body' lands about 10/12 kisses and shows the scene, 'close-up' about 6/12 and only two faces; 'from side' halves it
-    "- When two faces touch, use 'upper body' (not 'close-up' and never 'from side') and give each person only hair, eyes and basic attire or bare skin: more tags leak onto the other person.",
     "- A background: start with 'scenery', no people: the place type, landscape and weather, time of day and light, two or three signature objects, color palette and mood words.",
     "- Intimate / romantic scenes: describe physical proximity, poses (embrace, on bed, straddling), facial expressions (blush, heavy breathing, parted lips, closed eyes), and skin / attire state (bare skin, undressed, disheveled clothes, cleavage). Do not invent heavy jackets, coats, or armor if the scene is relaxed, bedroom, or intimate.",
     "- First-person POV: start with 'pov, 1girl, looking at viewer', her facial expression, her exact body posture/pose from the latest scene, her attire from the scene, then hair and eye color.",
-    // [SD1.5] pets become giant body parts (a lizard on a shoulder drew a lizard tail and a snake body); the same sentence is in TASKS.you/face because this line alone left 2/10
-    "- Never write a pet, creature or animal, even when the story puts one on the person: 'lizard on shoulder' is drawn as a giant lizard body and ruins the picture. Leave it out; write only the person, what they wear and what they hold.",
-    // [SD1.5] animal words are drawn literally: 'hawk-like eyes' drew a hawk, 'cow print' grew horns and cow ears in 4 of 6 pictures
-    "- Name hair color and eye color for every person. No similes or animal words, not even in a pattern ('sharp eyes', not 'hawk-like eyes'; 'black and white spotted', not 'cow print': the model draws the animal).",
+    // Without it the hair colors of a three-person scene dropped from 2 kinds to 1.5 (6 runs)
+    "- Name hair color and eye color for every person. No similes.",
+    // 'washed-out wide sleeves' came out as 'grey robe' (faded or worn 0/9, a grey T-shirt in the picture); with this line 8/9, and 0/9 invented wear for a story of new clothes
+    "- Clothing: for each person write the colour, the cut and the condition the story states for each garment (faded, worn, wide sleeves, oversized, tied waist), not just \"robe\".",
+    // 'city market' was drawn as a modern street; with this line the tags name an era in 6/6 runs instead of 1/6 to 3/6
+    "- Setting: name the era and culture of the place the story is in (for example ancient chinese town, medieval castle, post-apocalyptic wasteland), not just 'street' or 'city'.",
     "- Replace fictional place names with what the place looks like ('sea of sand' is 'desert dunes', never 'sea' or 'water'). No synonyms, no repeated tags.",
     "- The first line of your answer is the canvas, 'portrait' (one standing person) or 'landscape' (scenes, backgrounds, couples); the second line is the tags.",
-  ].join("\n");
+  ];
+
+  // [SD1.5] The phone's model: measured there, see README "SD1.5 调参结论".
+  const SD15_RULES = [
+    // 'upper body' lands about 10/12 kisses and shows the scene, 'close-up' about 6/12 and only two faces; 'from side' halves it
+    "- When two faces touch, use 'upper body' (not 'close-up' and never 'from side') and give each person only hair, eyes and basic attire or bare skin: more tags leak onto the other person.",
+    // pets become giant body parts (a lizard on a shoulder drew a lizard tail and a snake body); NO_PETS repeats it in the task because this line alone left 2/10
+    "- Never write a pet, creature or animal, even when the story puts one on the person: 'lizard on shoulder' is drawn as a giant lizard body and ruins the picture. Leave it out; write only the person, what they wear and what they hold.",
+    // animal words are drawn literally: 'hawk-like eyes' drew a hawk, 'cow print' grew horns and cow ears in 4 of 6 pictures
+    "- No animal words, not even in a pattern ('sharp eyes', not 'hawk-like eyes'; 'black and white spotted', not 'cow print': the model draws the animal).",
+  ];
+
+  const STYLE = RULES.join("\n");
+  const STYLE_SD15 = [...RULES.slice(0, -1), ...SD15_RULES, RULES.at(-1)].join("\n");
 
   const NPC = "the non-player character who speaks or acts the most in the latest scene (never the player's character, and not someone who has only just arrived)";
 
-  // [SD1.5] the same rules in STYLE alone were ignored for the character's signature details (pets in 2/10, 'cow print' in 12/12);
+  // [SD1.5] the same rules in the style alone were ignored for the character's signature details (pets in 2/10, 'cow print' in 12/12);
   // repeated at the end of the task they were followed (0/24 pets)
   const NO_PETS = " No pets or creatures, and no animal words even in a pattern ('black and white spotted', not 'cow print').";
 
@@ -54,11 +65,11 @@
     me: (player) => `Write the prompt for a full body picture of ${player}, the player's character. Take the looks from the player text if it describes them, otherwise from the story text. Reflect their current appearance and attire.`,
     you: (player, character) => {
       const hint = character && !/[vV]\d|\.png$/i.test(character) && character !== NPC ? ` (${character})` : "";
-      return `Write the prompt for a full body picture of the non-player character (NPC)${hint} interacting with ${player} in the story text: identify the NPC from the story text, take their gender, looks, hair, eye color, and attire from the story text. Do NOT draw ${player} (${player} is the player, not the NPC).${NO_PETS}`;
+      return `Write the prompt for a full body picture of the non-player character (NPC)${hint} interacting with ${player} in the story text: identify the NPC from the story text, take their gender, looks, hair, eye color, and attire from the story text. Do NOT draw ${player} (${player} is the player, not the NPC).`;
     },
     face: (player, character) => {
       const hint = character && !/[vV]\d|\.png$/i.test(character) && character !== NPC ? ` (${character})` : "";
-      return `Write the prompt for a bust portrait of the non-player character (NPC)${hint} interacting with ${player} in the story text: identify the NPC from the story text, take their gender, looks, hair, eye color, and facial expression from the story text. Do NOT draw ${player} (${player} is the player, not the NPC).${NO_PETS}`;
+      return `Write the prompt for a bust portrait of the non-player character (NPC)${hint} interacting with ${player} in the story text: identify the NPC from the story text, take their gender, looks, hair, eye color, and facial expression from the story text. Do NOT draw ${player} (${player} is the player, not the NPC).`;
     },
     bg: () => "Write the prompt for a background picture of the setting of the latest scene, with no people, matching its mood.",
     last: (player) =>
@@ -74,26 +85,35 @@
     Boolean(message.extra?.image) ||
     /sends a picture|!\[.*?\]\(.*?\)/i.test(message.mes ?? "");
 
-  // The story is in CONFIG.storyBlock when the card has one. Otherwise tag blocks are taken for analysis, status panels and variable updates and
-  // dropped; when that leaves nothing, the card keeps its story inside a tag of its own, so only the tags are removed.
+  // A reply is the story plus whatever the card wraps around it (reasoning, checks, status panels, options, variable updates), in tags whose
+  // names differ from card to card, so the story is found by what it is: the segment (a top-level tag block, or the text outside the tags) with
+  // the most letters. Reasoning blocks, by the one name every card shares, and JSON are not candidates. The first <content> of a reply can be a
+  // template quoted inside a self-check, which is why the choice is by size and not by tag name.
+  const isReasoning = (name) => /think|thought|reason|analy/i.test(name);
+  const isJson = (text) => (text.match(/[{}[\]]/g) ?? []).length / text.length > 0.01 || (text.match(/"\s*:\s*[["{\d]/g) ?? []).length >= 3;
+  const letters = (text) => (text.match(/\p{L}/gu) ?? []).length;
+
   function storyText(mes) {
     const tidy = (text) => text.replace(/\n{2,}/g, "\n").trim();
-    const block = CONFIG.storyBlock.exec(mes);
-    if (block) return tidy(block[1].replace(/<!--[\s\S]*?-->/g, "").replace(/<\/?[\w-]+[^>]*>/g, ""));
+    const flat = (text) => tidy(text.replace(/<\/?[^\s<>]+[^>]*>/g, ""));
     const plain = mes.replace(/<!--[\s\S]*?-->/g, "");
-    return tidy(plain.replace(/<([\w-]+)\b[^>]*>[\s\S]*?<\/\1>|<[\w-]+\s*\/>/g, "")) || tidy(plain.replace(/<\/?[\w-]+[^>]*>/g, ""));
+    const segments = [];
+    const outside = plain.replace(/<([^\s<>/!]+)[^>]*>([\s\S]*?)<\/\1>/g, (_all, name, inner) => (segments.push({ name, text: flat(inner) }), "\n"));
+    segments.push({ name: "", text: flat(outside) });
+    const best = segments.filter((s) => s.text && !isReasoning(s.name) && !isJson(s.text)).sort((a, b) => letters(b.text) - letters(a.text))[0];
+    return best?.text ?? flat(plain);
   }
 
   function gather(context, messages = CONFIG.storyMessages) {
     const chat = (context.chat ?? []).filter((message) => !message.is_system && !isPictureMessage(message));
     const intro = chat.find((message) => message.is_user)?.mes?.trim().slice(0, CONFIG.playerChars) ?? "";
-    const story = chat
+    const replies = chat
       .filter((message) => !message.is_user)
       .slice(-messages)
       .map((message) => storyText(message.mes ?? ""))
-      .filter(Boolean)
-      .join("\n\n")
-      .slice(-CONFIG.storyChars);
+      .filter(Boolean);
+    const story = replies.join("\n\n").slice(-CONFIG.storyChars);
+    const latest = replies.at(-1) ?? "";
     const recent = chat
       .filter((message) => message.is_user)
       .slice(1) // the first one is the intro
@@ -103,7 +123,7 @@
     const persona = context.powerUserSettings?.persona_description?.trim() ?? "";
     const character = context.name2 || context.characters?.[context.characterId]?.name || "";
     const card = (context.characters?.[context.characterId]?.description ?? "").trim().slice(0, CONFIG.playerChars);
-    return { player: context.name1 || "the player", character, intro, recent, story, persona, card };
+    return { player: context.name1 || "the player", character, intro, recent, story, latest, persona, card };
   }
 
   // Sentences with either are removed from what the model reads. Only EXPLICIT_TERMS also add the explicit tags: each of its terms appeared
@@ -134,11 +154,12 @@
     material.story && `Story text:\n${sanitizeStory(material.story)}`,
   ];
 
-  function buildRequest(kind, subject, material) {
+  function buildRequest(kind, subject, material, sd15 = false) {
     const target = subject || material.character || "";
-    const sections = [...materialSections(kind, material), `Task: ${TASKS[kind](material.player, target)}`];
+    const task = TASKS[kind](material.player, target) + (sd15 && ["you", "face"].includes(kind) ? NO_PETS : "");
+    const sections = [...materialSections(kind, material), `Task: ${task}`];
     return [
-      { role: "system", content: STYLE },
+      { role: "system", content: sd15 ? STYLE_SD15 : STYLE },
       { role: "user", content: sections.filter(Boolean).join("\n\n") },
     ];
   }
@@ -175,7 +196,7 @@
   // does not pass the slash parser. Only what is no part of the text is removed (thinking, code fences, the blank ends).
   const impText = (reply) => stripReply(reply).replace(/\r\n?/g, "\n").trim();
 
-  // [SD1.5] The canvas is fixed for single-subject kinds (the model picked a wide one for a lone character in 5 of 8 runs, which draws twins);
+  // The canvas is fixed for single-subject kinds (the model picked a wide one for a lone character in 5 of 8 runs; on SD1.5 that drew twins);
   // for last/free the model's first line decides. Only what the slash parser acts on ('|' and '{{') is removed from the prompt.
   const FIXED_CANVAS = { me: "portrait", you: "portrait", face: "portrait", bg: "landscape", pov: "portrait" };
 
@@ -239,6 +260,7 @@
       }
       const { kind, subject, forceNsfw } = parseInput(input);
       const material = gather(context());
+      const sd15 = context().extensionSettings?.sd?.source === "auto";
       if (!material.story && !material.intro) {
         toastr.warning("聊天里还没有剧情可画");
         return null;
@@ -249,26 +271,30 @@
         let parsed;
         for (let attempt = 0; attempt < 2 && !(parsed && isTagList(parsed.prompt)); attempt += 1) {
           const reqMaterial = attempt === 1 && !reply?.trim() ? { ...material, story: kind === "me" ? "" : (material.recent.join("\n") || "") } : material;
-          reply = String(await generateRaw({ ordered_prompts: buildRequest(kind, subject, reqMaterial), should_silence: true }));
+          reply = String(await generateRaw({ ordered_prompts: buildRequest(kind, subject, reqMaterial, sd15), should_silence: true }));
           parsed = parseReply(kind, reply);
         }
         if (!isTagList(parsed.prompt)) throw new Error(reply.trim() ? `模型没有按格式返回标签: ${reply.slice(0, 80)}` : "模型返回了空内容");
         let prompt = parsed.prompt;
-        // The story is checked before sanitizeStory removes those sentences from the model's request: the model never sees them, so the tags come from here.
-        const isIntimate = forceNsfw || EXPLICIT_TERMS.test(material.story || "");
+        // Only the latest reply decides: an explicit scene a few replies back would otherwise make every later picture explicit. It is checked before
+        // sanitizeStory removes those sentences from the model's request: the model never sees them, so the tags come from here.
+        const why = forceNsfw ? "nsfw 参数" : EXPLICIT_TERMS.exec(material.latest)?.[0];
+        let added = false;
         if (kind === "pov") {
           const cleanPrompt = stripMale(prompt)
             .split(",")
             .map((t) => t.trim())
             .filter((t) => t && !/^(1girl|looking at viewer|eye contact|pov|pov hands)$/i.test(t))
             .join(", ");
-          prompt = isIntimate
+          added = Boolean(why);
+          prompt = added
             ? `pov, looking at viewer, eye contact, pov hands, 1girl, ${NSFW_BASE}, ${cleanPrompt}`
             : `pov, looking at viewer, 1girl, ${cleanPrompt}`;
-        } else if (isIntimate && (kind === "last" || kind === "free" || forceNsfw)) {
+        } else if (why && (kind === "last" || kind === "free" || forceNsfw)) {
+          added = true;
           prompt = `${NSFW_BASE}, ${prompt}`;
         }
-        return { kind, canvas: parsed.canvas, prompt };
+        return { kind, canvas: parsed.canvas, prompt, why: added ? why : undefined };
       } catch (error) {
         console.error("[pic]", error);
         toastr.error(`画图失败: ${error?.message ?? error}`);
@@ -284,10 +310,10 @@
       const result = await compose(input, "/pic");
       if (!result) return;
       const [width, height] = CONFIG[result.canvas];
-      console.info("[pic]", result.kind, `${width}x${height}`, result.prompt);
+      console.info("[pic]", result.kind, `${width}x${height}`, result.why ?? "-", result.prompt);
       setInput(`/sd extend=false width=${width} height=${height} ${result.prompt}`);
       focusInput();
-      toastr.info("标签已放进输入框，改完回车出图");
+      toastr.info(`标签已放进输入框，改完回车出图${result.why ? `（已加露骨标签：${result.why}）` : ""}`);
     };
   }
 

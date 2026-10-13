@@ -1,12 +1,12 @@
 // @name 懒人快捷键
 // Helpers for the page itself, not for the chat model:
-//   Alt+, / Alt+. scroll the chat up / down by 0.4 of a page; Alt+/ runs the 代写 quick reply;
+//   u d , . scroll the chat up / down by 0.4 of a page (u and , up, d and . down) while no text field has the focus; / focuses the input box,
+//   Esc (SillyTavern's own) and Shift+/ leave it; Alt+/ runs the 代写 quick reply;
 //   the 全屏 quick reply (its message is empty) toggles browser fullscreen;
 //   while a reply is being written, a pill above the stop button shows a pulsing dot, the elapsed time and the characters streamed so far
 //   (or how long nothing new has come, when it has stalled);
 //   message frames outside the viewport get their CSS animations paused.
-// Alt works whatever has the focus (SillyTavern puts it back into the input box after every send), and a scroll with Alt takes the focus
-// out of a text field, so that from then on plain , and . scroll too, until the next click into a field. Holding a key acts once.
+// Alt+/ works whatever has the focus (SillyTavern puts it back into the input box after every send). Holding a key acts once.
 // The key listener runs in the capture phase, ahead of other handlers that might stop the event.
 // Message bodies are srcdoc iframes (the card's renderer). Key events in them never reach the page, so every frame gets the key listener;
 // and they keep animating after being scrolled out of view (about 100 running animations measured, one core busy, gone when the tab was
@@ -19,15 +19,27 @@ const QR_IMPERSONATE = 2;
 const QR_FULLSCREEN = 4;
 const qrLabel = (id) => window.parent.quickReplyApi?.getQrByLabel(QR_SET, id)?.label;
 const QUICK_REPLIES = { Slash: QR_IMPERSONATE };
-const SCROLL = { Comma: -1, Period: 1 };
+const SCROLL = { Comma: -1, Period: 1, KeyU: -1, KeyD: 1 };
 const isTyping = (el) => !!el?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])");
 const onKey = (e) => {
   if (e.ctrlKey || e.metaKey) return;
   const quickReply = e.altKey && QUICK_REPLIES[e.code];
-  const scroll = (e.altKey || (!e.shiftKey && !isTyping(e.target))) && SCROLL[e.code];
-  if (!quickReply && !scroll) return;
+  const plain = !e.altKey && !e.shiftKey && !isTyping(e.target);
+  const scroll = plain && SCROLL[e.code];
+  const focusInput = plain && e.code === "Slash";
+  // Shift+/ in the input box is the other way out of it besides Esc: the right hand can do it. The key is checked, not the code, so an input
+  // method composing a ？ (key "Process") is left alone, and only the chat input is, since other text fields need their ?
+  const leaveInput = e.shiftKey && !e.altKey && e.key === "?" && e.target?.id === "send_textarea";
+  if (!quickReply && !scroll && !focusInput && !leaveInput) return;
   e.preventDefault();
   if (e.repeat) return;
+  if (leaveInput) return e.target.blur();
+  if (focusInput) {
+    const box = doc.getElementById("send_textarea");
+    box?.focus();
+    box?.setSelectionRange(box.value.length, box.value.length);
+    return;
+  }
   if (quickReply) {
     // Run through the API: it needs no button on the page, and a missing quick reply is an error to report, not a silent no-op.
     const api = window.parent.quickReplyApi;
@@ -35,7 +47,6 @@ const onKey = (e) => {
     else api.executeQuickReply(QR_SET, quickReply).catch((error) => console.warn("[page] quick reply failed:", quickReply, error));
     return;
   }
-  if (isTyping(e.target)) e.target.blur();
   const chat = doc.getElementById("chat");
   if (chat) chat.scrollBy({ top: scroll * chat.clientHeight * 0.4, behavior: "smooth" });
   else console.warn("[page] #chat not found");

@@ -15,6 +15,17 @@ assert.equal(
 assert.equal(story.storyText("<think>x</think>She waves.<!-- c -->"), "She waves.");
 assert.equal(story.storyText("<story>\n她推开门。\n</story>"), "她推开门。", "a card whose story is inside a tag of its own is not emptied");
 assert.equal(story.storyText("<status>HP 3</status>\n她推开门。"), "她推开门。", "with text outside the tags, the tag blocks are still dropped");
+assert.equal(
+  story.storyText("<check>格式：<content><now_plot>.........</now_plot></content></check>\n<content>\n<now_plot>他走上街头，买了一盒桂花糕。</now_plot>\n</content>\n<UpdateVariable>{\"a\": 1, \"b\": 2, \"c\": 3}</UpdateVariable>"),
+  "他走上街头，买了一盒桂花糕。",
+  "a template quoted in a self-check is not the story, whichever tags the card uses",
+);
+assert.equal(story.storyText("Honestly: \"No.\" \"Yes.\" \"Fine.\" she said, and walked out."), "Honestly: \"No.\" \"Yes.\" \"Fine.\" she said, and walked out.", "English dialogue is not JSON");
+assert.equal(
+  story.storyText("<think_nya~>\n规划：转场到坊市\n<rule_check>ok</rule_check>\n</think_nya~>\n<game>\n他走上街头。\n</game>\n<summary>小结</summary>\n<UpdateVariable>x</UpdateVariable>"),
+  "他走上街头。",
+  "a card whose story is in <game>: the planning text before it is not the story",
+);
 
 // --- gather
 const chat = [
@@ -42,7 +53,14 @@ assert.ok(user.indexOf("Player description:") < user.indexOf("Player text") && u
 assert.match(user, /Task: Write the prompt for a full body picture of 齐野/);
 assert.match(story.buildRequest("free", "me + you kissing", material)[1].content, /Subject: me \+ you kissing$/);
 assert.equal(story.buildRequest("bg", "", { ...material, persona: "", intro: "" })[1].content.startsWith("Story text:"), true);
-for (const kind of ["you", "face"]) assert.match(story.buildRequest(kind, "", material)[1].content, /No pets or creatures/, "NPC kinds repeat the pet ban in the task");
+// the SD1.5 phone gets the rules its model needs; sdcpp does not
+for (const kind of ["you", "face"]) {
+  assert.match(story.buildRequest(kind, "", material, true)[1].content, /No pets or creatures/, "SD1.5: NPC kinds repeat the pet ban in the task");
+  assert.doesNotMatch(story.buildRequest(kind, "", material)[1].content, /No pets or creatures/, "sdcpp: no pet ban");
+}
+assert.match(story.buildRequest("last", "", material, true)[0].content, /When two faces touch[\s\S]*Never write a pet[\s\S]*No animal words/);
+assert.doesNotMatch(story.buildRequest("last", "", material)[0].content, /When two faces touch|Never write a pet|animal words/);
+assert.ok(story.buildRequest("last", "", material, true)[0].content.endsWith("the second line is the tags."), "the canvas line stays last");
 for (const kind of ["me", "you", "face", "bg", "last", "free"]) {
   assert.doesNotMatch(story.buildRequest(kind, "x", material)[1].content, /\bDraw\b/, "'Draw …' trips the upstream image-quota classifier");
 }
@@ -112,6 +130,30 @@ await h.run("last");
 assert.ok(!h.log.slash[0].includes("nsfw"), "a kiss on a bed is not explicit");
 await h.run("last nsfw");
 assert.ok(h.log.slash[1].includes(story.NSFW_BASE), "nsfw forces the base tags");
+
+// an explicit scene a few replies back does not make the latest, plain reply explicit
+const afterwards = { ...context, chat: [...chat, { mes: "<content>\n她握住他的阴茎。\n</content>" }, { mes: "<content>\n天亮了，两人在桌边吃早饭。\n</content>" }] };
+h = harness("landscape\n1girl, 1boy, eating, table, morning", afterwards);
+await h.run("last");
+assert.ok(!h.log.slash[0].includes("nsfw"), "only the latest reply decides");
+
+// the style follows SillyTavern's image source
+h = harness("landscape\n1girl, 1boy", { ...context, extensionSettings: { sd: { source: "auto" } } });
+await h.run("last");
+assert.match(h.log.raw[0].ordered_prompts[0].content, /Never write a pet/, "source 'auto' is the SD1.5 phone");
+h = harness("landscape\n1girl, 1boy", { ...context, extensionSettings: { sd: { source: "sdcpp" } } });
+await h.run("last");
+assert.doesNotMatch(h.log.raw[0].ordered_prompts[0].content, /Never write a pet/, "sdcpp gets the plain style");
+
+// the toast says why the explicit tags were added
+{
+  const toasts = [];
+  const pic = story.createPic({ context: () => explicitContext, generateRaw: async () => "landscape\n1girl, 1boy", setInput: () => {}, toastr: { info: (t) => toasts.push(t), warning() {}, error() {} } });
+  await pic("last");
+  assert.match(toasts.at(-1), /已加露骨标签：阴茎/);
+  await pic("me");
+  assert.doesNotMatch(toasts.at(-1), /已加露骨标签/, "no explicit tags for a kind that does not get them");
+}
 
 // a scrub-only term is kept from the model but does not add the explicit tags
 const plainContext = { ...context, chat: [...chat, { mes: "<content>\n鼻尖微微耸动。她的脸庞稚嫩清秀。\n</content>" }] };

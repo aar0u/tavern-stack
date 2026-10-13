@@ -32,6 +32,7 @@ const events = {};
 const intervals = [];
 const cleared = [];
 let now = 1_000_000;
+const inputBox = { value: "草稿", focused: 0, range: null, focus() { this.focused += 1; }, setSelectionRange(from, to) { this.range = [from, to]; } };
 const doc = {
   body: { append() {} },
   head: { append() {} },
@@ -41,7 +42,7 @@ const doc = {
   documentElement: { requestFullscreen: async (options) => requests.push(options) },
   exitFullscreen: async () => requests.push("exit"),
   querySelectorAll: (selector) => (selector === "iframe" ? [message, script] : []),
-  getElementById: (id) => ({ chat: { clientHeight: 1000, scrollBy: (options) => scrolled.push(options.top) }, mes_stop: stopButton })[id] ?? null,
+  getElementById: (id) => ({ chat: { clientHeight: 1000, scrollBy: (options) => scrolled.push(options.top) }, mes_stop: stopButton, send_textarea: inputBox })[id] ?? null,
   addEventListener: (type, handler) => (listeners[type] ??= []).push(handler),
   removeEventListener: (type, handler) => (listeners[type] = listeners[type].filter((h) => h !== handler)),
 };
@@ -77,22 +78,51 @@ const key = (code, extra = {}, handlers = listeners.keydown) => {
   handlers.forEach((handler) => handler(event));
   return event;
 };
-assert.equal(key("Period", { altKey: true }).prevented, true);
-assert.deepEqual(scrolled, [400], "Alt+. scrolls down by 0.4 of the chat height");
-key("Comma", { altKey: true });
-assert.deepEqual(scrolled, [400, -400]);
-key("Period", { altKey: true, repeat: true });
-assert.equal(scrolled.length, 2, "holding the key acts once");
-key("Period");
-assert.equal(scrolled.length, 3, "a plain . scrolls when nothing is being typed");
-key("Period", { target: { closest: () => ({}) } });
-assert.equal(scrolled.length, 3, "and types a . while a text field has the focus");
+let blurred = 0;
+const field = { closest: () => ({}), blur: () => blurred++ };
+const chatInput = { id: "send_textarea", closest: () => ({}), blur: () => blurred++ };
+for (const [code, top] of [["KeyD", 400], ["KeyU", -400], ["Period", 400], ["Comma", -400]]) {
+  const before = scrolled.length;
+  assert.equal(key(code).prevented, true);
+  assert.deepEqual(scrolled.slice(before), [top], `a plain ${code} scrolls by 0.4 of the chat height when nothing is being typed`);
+}
+key("KeyD", { repeat: true });
+assert.equal(scrolled.length, 4, "holding the key acts once");
+for (const code of ["KeyD", "KeyU", "Period", "Comma"]) {
+  const before = scrolled.length;
+  assert.equal(key(code, { target: field }).prevented, false, `${code} is typed while a text field has the focus`);
+  assert.equal(scrolled.length, before);
+}
 assert.equal(key("Period", { shiftKey: true }).prevented, false, "Shift+. is a > and left alone");
+assert.equal(key("KeyD", { shiftKey: true }).prevented, false, "Shift+D is a capital D and left alone");
+for (const extra of [{ ctrlKey: true }, { metaKey: true }]) {
+  const before = scrolled.length;
+  assert.equal(key("KeyD", extra).prevented, false, "Ctrl+D (a bookmark) and Cmd+D are the browser's");
+  assert.equal(key("KeyU", extra).prevented, false, "Ctrl+U (view source) too");
+  assert.equal(scrolled.length, before);
+}
+assert.equal(key("Comma", { altKey: true }).prevented, false, "Alt+, and Alt+. are no longer used");
+assert.equal(key("Slash").prevented, true);
+assert.deepEqual([inputBox.focused, inputBox.range], [1, [2, 2]], "a plain / focuses the input box, caret at the end");
+key("Slash", { repeat: true });
+assert.equal(inputBox.focused, 1, "holding it acts once");
+assert.equal(key("Slash", { target: field }).prevented, false, "and types a / while a text field has the focus");
+// Shift+/ leaves the chat input, and only that
+assert.equal(key("Slash", { shiftKey: true, key: "?", target: chatInput }).prevented, true);
+assert.equal(blurred, 1, "Shift+/ takes the focus out of the chat input");
+key("Slash", { shiftKey: true, key: "?", target: chatInput, repeat: true });
+assert.equal(blurred, 1, "holding it acts once");
+assert.equal(key("Slash", { shiftKey: true, key: "?", target: field }).prevented, false, "another text field keeps its ?");
+assert.equal(key("Slash", { shiftKey: true, key: "Process", target: chatInput }).prevented, false, "an input method composing a ？ is left alone");
+assert.equal(key("Slash", { shiftKey: true, key: "?" }).prevented, false, "and with no field focused Shift+/ does nothing");
+assert.equal(inputBox.focused, 1);
 key("Slash", { altKey: true });
 assert.deepEqual(JSON.parse(JSON.stringify(pressed)), [["quick-replies", 2]], "Alt+/ runs the 代写 quick reply through SillyTavern's API, by its id");
+assert.equal(key("Slash", { altKey: true, ctrlKey: true }).prevented, false, "Ctrl+Alt+/ is not Alt+/");
 assert.equal(message.inner.keydown.length, 1, "a message frame has the key listener too: key events inside it never reach the page");
-key("Period", { altKey: true }, message.inner.keydown);
-assert.equal(scrolled.length, 4, "and it scrolls the page's chat");
+const beforeFrame = scrolled.length;
+key("KeyD", {}, message.inner.keydown);
+assert.equal(scrolled.length, beforeFrame + 1, "and it scrolls the page's chat");
 assert.equal(script.inner.keydown.length, 1, "every frame, not only the messages");
 
 // --- fullscreen
