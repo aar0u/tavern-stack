@@ -27,7 +27,7 @@ st.sh logs            把所有服务和 leyline 的日志，每行带时间，�
 | `comfy` | `comfy_url` = `http://host.docker.internal:8188/`、`comfy_workflow`、`comfy_type` | 宿主机的 ComfyUI（imagegen-stack 的 `run_comfyui.sh`），CPU 约 43 秒一张；步数和 CFG 写在工作流里 |
 | `auto` | `auto_url` = `http://host.docker.internal:7860` | 手机（Local Dream，SD1.5），由 imagegen-stack 的 `run_localdream.sh` 启动（要设 `LOCALDREAM_HOST` 为手机的地址） |
 
-**步数、CFG、采样器、调度器是共用的**，不分来源。seed 按 Anima-Turbo 写了 `steps: 8`、`scale: 1`、`euler`、`simple`（ST 默认的 20 步、CFG 7 会慢约 5 倍）。切到手机（SD1.5）要在界面里改成约 20 步、CFG 9、DPM++ 2M，改回来用 sdcpp 前不要忘记；`./st.sh` 重启会按 seed 还原。seed 每次启动都覆盖，在界面里手改的生图设置不保留。sdcpp 来源发给服务器的字段里没有 LoRA，所以 LoRA 无法在 ST 里选。`story.js` 里针对 SD1.5 的标签规则（标了 `[SD1.5]`）对 Anima 未必需要，没有改。
+**步数、CFG、采样器、调度器是共用的**，不分来源。seed 按 Anima-Turbo 写了 `steps: 8`、`scale: 1`、`euler`、`simple`（ST 默认的 20 步、CFG 7 会慢约 5 倍）。切到手机（SD1.5）要在界面里改成约 20 步、CFG 9、DPM++ 2M，改回来用 sdcpp 前不要忘记；`./st.sh` 重启会按 seed 还原。seed 每次启动都覆盖，在界面里手改的生图设置不保留。sdcpp 来源发给服务器的字段里没有 LoRA，所以 LoRA 在服务器那边设（`run_sdcpp.sh` 启动时默认带 waiAnima，用 `SD_LORA_TAGS` 改），ST 里不能选。`story.js` 里针对 SD1.5 的标签规则（标了 `[SD1.5]`）对 Anima 未必需要，没有改。
 
 ## LLM 网关（gateway.mjs）
 
@@ -43,7 +43,7 @@ st.sh logs            把所有服务和 leyline 的日志，每行带时间，�
 | `ORIGINS` | 允许从浏览器直接请求网关的页面来源，默认 `http://127.0.0.1:8000` 和 `http://localhost:8000`；用手机或局域网地址打开 ST 时要加上 |
 
 - **`BODY` 因上游而异**：OpenRouter 要 `{"reasoning":{"enabled":false}}`（ST 自己的 OpenRouter 来源只会发 `effort`，关不掉）；cpa 忽略那种写法，要 `{"reasoning_effort":"low"}`。换上游时先发两三个一句话的小请求（带不同的 `BODY`），看返回的 `usage` 里推理 token 有没有变，再决定写法。
-- **重试**：429/502/503/504 和网络错误，指数退避。Gemini（经 cpa）偶尔回 200 但 `choices` 是空的、输出 0 token（日志里是 `out=0`，`/pic` 会报"模型返回了空内容"），同样重试；用完仍是空的就原样交给 ST。流式请求不检查。
+- **重试**：429/502/503/504 和网络错误，指数退避。Gemini（经 cpa）偶尔回 200 但 `choices` 是空的、输出 0 token（日志里是 `out=0`，`/pic` 会报"模型返回了空内容"），同样重试；用完仍是空的就原样交给 ST。上游的内容过滤（`choices` 有一项但没有内容，`finish_reason` 是 `prohibited_content` 之类，日志里是 `blocked: finish_reason=…`）每次结果不同，也同样重试；用完仍被拦，就把 `上游没有返回内容 (finish_reason: …)` 作为错误交给 ST，而不是一条空回复。流式请求不检查。
 - **末尾是 assistant 的请求**（预填、ST 的"继续"、卡里的脚本）：上游返回 400 且信息含 `ending with a model turn`（Gemini）时，网关补一条 `user: Continue.` 重发，并记住这个上游，之后直接带上；接受预填的上游不受影响。模型是重新回答，不是从预填处精确接着写，所以没有做"中断续写"的按钮。
 - **CORS**：卡里的脚本会从浏览器直接请求网关，所以对 `ORIGINS` 里的来源放行，不用 `*`（否则打开的任何网页都能通过这个本地端口花掉上游额度）。
 - **一行日志**：`模型 状态 耗时 in= out= reasoning=`；流式只有状态和耗时。流式被上游中途断开时，再多一行 `模型 stream cut: 原因`（ST 那边只会看到回复变短，没有别的提示）；客户端自己关闭（点停止）不算。网关没有超时：上游连接不断、也不再发数据时会一直等。
@@ -95,7 +95,7 @@ st.sh logs            把所有服务和 leyline 的日志，每行带时间，�
 
 | 命令 | 入口 | 作用 |
 |---|---|---|
-| `/pic me｜you｜face｜bg｜last｜pov｜<名字、描述或场景>` | "更多"菜单 | 让模型写 SD 标签，再交给 ST 自己的 `/sd`；不带参数时提示用法 |
+| `/pic me｜you｜face｜bg｜last｜pov｜<名字、描述或场景>` | "更多"菜单 | 让模型写 SD 标签，作为完整的 `/sd …` 命令放进输入框，不自动出图；改完标签回车才出图；不带参数时提示用法。最近的剧情含露骨词（`story.js` 的 `EXPLICIT_TERMS`），或参数里写了 `nsfw`（如 `/pic pov nsfw`、`/pic nsfw`），会在标签前加一串露骨标签（`NSFW_BASE`）；这些词所在的句子（连同 `SCRUB_TERMS`：只删、不触发）不会发给模型 |
 | `/imp [草稿]` | 快捷回复"代写"、`Alt+/` | 写玩家接下来的台词或动作，放进输入框，不自动发送 |
 | `/sum` | "更多"菜单 | 把整个聊天总结成长期记忆，显示在弹窗里 |
 | `/more` | 快捷回复"更多" | 在按钮上方弹出小菜单：画此刻、画第一人称(POV)、画我、画NPC、画特写、画景、画输入框里的…、总结 |
@@ -117,7 +117,7 @@ st.sh logs            把所有服务和 leyline 的日志，每行带时间，�
 
 - **脚本**知道意图（我、你、背景、情侣），负责向模型提问；怎么写标签全是 `STYLE` 那段给模型看的文字，**代码不改写标签**。手机换了模型（SDXL 等），只改这段文字；针对 SD1.5 弱点的规则都标了 `[SD1.5]`，换模型时先搜这个标记。代码只硬编码了一件事：单人和背景的画布。
 - **localdream**只懂 SD1.5 和手机：约 77 个 token、不认汉字、画布最大 768、手机的模型启停。网关不认识任何客户端。
-- 生图本身是 ST 的 `/sd`，后端能力（来源、放大、种子、采样器、模型切换等）更新 ST 就能拿到。拿不到的是 ST 在提示词生成层的新功能（魔杖菜单里的生图项、互动模式、函数工具模式、多模态识图、生成前的编辑弹窗）；魔杖菜单里的生图项仍用 ST 自带模板，会被拒绝，请用 `/pic`。依赖面很小：`generateRaw`、`triggerSlash('/sd …')`、`SlashCommandParser.addCommandObject`（四个命令都这样注册，带参数说明；ST 把旧的 `registerSlashCommand` 标成了弃用）。`st-init` 装酒馆助手和提示词模板用的是最新版，ST 镜像是 `latest`，需要稳定时固定版本。
+- 生图本身是 ST 的 `/sd`，后端能力（来源、放大、种子、采样器、模型切换等）更新 ST 就能拿到。拿不到的是 ST 在提示词生成层的新功能（魔杖菜单里的生图项、互动模式、函数工具模式、多模态识图、生成前的编辑弹窗）；魔杖菜单里的生图项仍用 ST 自带模板，会被拒绝，请用 `/pic`。依赖面很小：`generateRaw`、`SlashCommandParser.addCommandObject`（四个命令都这样注册，带参数说明；ST 把旧的 `registerSlashCommand` 标成了弃用）。`st-init` 装酒馆助手和提示词模板用的是最新版，ST 镜像是 `latest`，需要稳定时固定版本。
 
 ### `/imp`
 

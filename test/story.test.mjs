@@ -59,11 +59,17 @@ assert.equal(story.parseReply("bg", "portrait\nscenery, desert").canvas, "landsc
 assert.equal(story.parseReply("me", "<think>hm</think>portrait\n1boy, brown hair").prompt, "1boy, brown hair");
 assert.equal(story.parseReply("free", "landscape\na | /echo x, {{user}} hair").prompt, "a /echo x, user hair", "no pipe or macro survives for the slash parser");
 
+// --- a refusal that still carries a milder tag list: the list is used, the prose around it is not
+const refusal = "I cannot generate visual tags or descriptive prompts depicting explicit sexual acts.\n\nI can, however, provide visual tags in a non-explicit composition.\n\n**Alternative Prompt (Non-explicit):**\n\nlandscape\n1girl, 1boy, couple, on bed, intimate, embrace, 1girl, long black hair, blue eyes, blush";
+assert.deepEqual(story.parseReply("last", refusal), { canvas: "landscape", prompt: "1girl, 1boy, couple, on bed, intimate, embrace, 1girl, long black hair, blue eyes, blush" });
+
 // --- input
-assert.deepEqual(story.parseInput(" me "), { kind: "me", subject: "" });
-assert.deepEqual(story.parseInput(" BG "), { kind: "bg", subject: "" });
-assert.deepEqual(story.parseInput(" POV "), { kind: "pov", subject: "" });
-assert.deepEqual(story.parseInput("齐野和塞芙琳热吻"), { kind: "free", subject: "齐野和塞芙琳热吻" });
+assert.deepEqual(story.parseInput(" me "), { kind: "me", subject: "", forceNsfw: false });
+assert.deepEqual(story.parseInput(" BG "), { kind: "bg", subject: "", forceNsfw: false });
+assert.deepEqual(story.parseInput(" POV "), { kind: "pov", subject: "", forceNsfw: false });
+assert.deepEqual(story.parseInput("nsfw"), { kind: "last", subject: "", forceNsfw: true });
+assert.deepEqual(story.parseInput("pov NSFW"), { kind: "pov", subject: "", forceNsfw: true }, "nsfw next to a bare kind forces the explicit tags for that kind");
+assert.deepEqual(story.parseInput("齐野和塞芙琳热吻"), { kind: "free", subject: "齐野和塞芙琳热吻", forceNsfw: false });
 
 // --- /pic: what goes to the model and what goes to /sd
 function harness(replyOrError, ctx = context) {
@@ -77,7 +83,7 @@ function harness(replyOrError, ctx = context) {
       if (reply instanceof Error) throw reply;
       return reply;
     },
-    triggerSlash: async (command) => log.slash.push(command),
+    setInput: (text) => log.slash.push(text),
     toastr,
   });
   return { run, log };
@@ -94,6 +100,25 @@ await h.run("齐野和塞芙琳热吻");
 assert.equal(h.log.slash[0], "/sd extend=false width=768 height=512 upper body, 1girl, 1boy, kissing, 1girl, red hair, green eyes, 1boy, dark brown hair, brown eyes");
 assert.match(h.log.raw[0].ordered_prompts[1].content, /Subject: 齐野和塞芙琳热吻$/);
 assert.equal(h.log.raw.length, 1, "one model call per picture");
+
+// explicit tags: only from an explicit story or an explicit 'nsfw', never from the model's own tags (a kiss, a bed, a blush)
+const explicitContext = { ...context, chat: [...chat, { mes: "<content>\n她握住他的阴茎。\n</content>" }] };
+h = harness("landscape\n1girl, 1boy, kissing, on bed, blush", explicitContext);
+await h.run("last");
+assert.ok(h.log.slash[0].includes(`${story.NSFW_BASE}, 1girl, 1boy, kissing`), "an explicit story adds the base tags");
+assert.doesNotMatch(h.log.raw[0].ordered_prompts[1].content, /阴茎/, "and the model never sees the explicit sentence");
+h = harness("landscape\n1girl, 1boy, kissing, on bed, blush");
+await h.run("last");
+assert.ok(!h.log.slash[0].includes("nsfw"), "a kiss on a bed is not explicit");
+await h.run("last nsfw");
+assert.ok(h.log.slash[1].includes(story.NSFW_BASE), "nsfw forces the base tags");
+
+// a scrub-only term is kept from the model but does not add the explicit tags
+const plainContext = { ...context, chat: [...chat, { mes: "<content>\n鼻尖微微耸动。她的脸庞稚嫩清秀。\n</content>" }] };
+h = harness("landscape\n1girl, solo, smile", plainContext);
+await h.run("last");
+assert.ok(!h.log.slash[0].includes("nsfw"), "SCRUB_TERMS alone add no explicit tags");
+assert.doesNotMatch(h.log.raw[0].ordered_prompts[1].content, /稚嫩|耸动/, "but the model does not read them");
 
 assert.equal(story.stripMale("1girl, 1boy, green eyes, brown hair"), "1girl, green eyes, brown hair");
 
@@ -226,7 +251,6 @@ assert.equal(story.transcript({ chat: Array.from({ length: 3 }, () => ({ mes: `<
 // --- the Tavern Helper side: with no `module`, the script registers /pic and /imp using the runtime's globals
 const registered = [];
 const popups = [];
-const calls = [];
 const box = { value: "「走。」", events: [], focus() { this.focused = true; }, setSelectionRange(from, to) { this.range = [from, to]; }, dispatchEvent(event) { this.events.push(event); } };
 const summaryBox = { select() { this.selected = true; } };
 const clipboard = [];
@@ -251,7 +275,6 @@ runInNewContext(readFileSync(here, "utf8"), {
     }),
   },
   generateRaw: async () => "portrait\n1boy, brown hair",
-  triggerSlash: async (command) => calls.push(command),
   toastr: { info() {}, warning() {}, error: (text) => toastsSeen.push(["error", text]), success: (text) => toastsSeen.push(["success", text]) },
 });
 assert.deepEqual(registered.map((registeredCommand) => registeredCommand.name).sort(), ["imp", "more", "pic", "sum"]);
@@ -259,11 +282,12 @@ const command = (name) => registered.find((registeredCommand) => registeredComma
 assert.deepEqual(registered.map((c) => [c.name, c.unnamedArgumentList.length]).sort(), [["imp", 1], ["more", 0], ["pic", 1], ["sum", 0]], "/imp and /pic take one optional text, the others none");
 assert.ok(registered.every((c) => c.helpString), "every command has help text");
 assert.equal(await command("pic")({}, "me"), "", "a slash command returns no text for the chat");
-assert.equal(calls[0], "/sd extend=false width=512 height=768 1boy, brown hair");
+assert.equal(box.value, "/sd extend=false width=512 height=768 1boy, brown hair", "/pic fills the box with a ready /sd command and draws nothing");
+box.value = "「走。」";
+box.events.length = 0;
 assert.equal(await command("imp")({}, ""), "");
 assert.equal(box.value, "portrait\n1boy, brown hair", "the text is assigned to the box as it is, not sent through the slash parser");
 assert.deepEqual(box.events.map((event) => [event.type, event.bubbles]), [["input", true]], "with an input event for SillyTavern to notice");
-assert.equal(calls.length, 1, "/imp ran no slash command");
 assert.equal(box.focused, true, "in the page, the real input box is focused after /imp");
 assert.deepEqual(box.range, [box.value.length, box.value.length], "with the caret at the end");
 assert.equal(await command("sum")({}), "");

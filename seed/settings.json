@@ -70,14 +70,8 @@
             "steps": 8,
             "scale": 1,
             "free_extend": false,
-            "negative_prompt": "censored, mosaic, bar censor, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, deformed, disfigured, mutated, extra fingers, fewer fingers, extra limbs, poorly drawn face, ugly, duplicate, cloned face, long neck, out of frame",
-            "styles": [
-                {
-                    "name": "Default",
-                    "prefix": "best quality, absurdres, masterpiece,",
-                    "negative": "censored, mosaic, bar censor, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, deformed, disfigured, mutated, extra fingers, fewer fingers, extra limbs, poorly drawn face, ugly, duplicate, cloned face, long neck, out of frame"
-                }
-            ]
+            "prompt_prefix": "best quality, absurdres, masterpiece,",
+            "negative_prompt": "censored, mosaic, bar censor, self-fellatio, detached head, contortion, unnatural anatomy, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, deformed, disfigured, mutated, extra fingers, fewer fingers, extra limbs, extra legs, poorly drawn face, ugly, duplicate, cloned face, long neck, out of frame"
         }
     }
 }

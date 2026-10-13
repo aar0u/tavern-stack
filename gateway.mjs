@@ -42,10 +42,20 @@ export function createGateway({ upstream, key, model, body: extra = {}, retries 
         continue;
       }
       // Gemini (through cpa) sometimes answers 200 with no choices at all and 0 completion tokens; the same request usually works again.
-      const empty = response.status === 200 && !payload.stream && attempt < retries && (await response.clone().json().catch(() => null))?.choices?.length === 0;
-      if ((!RETRY_STATUS.has(response.status) && !empty) || attempt >= retries) return response;
+      // A choice with no content ('prohibited_content', 'safety') is the upstream's filter: it varies from call to call, so it is asked for again too.
+      const answer = response.status === 200 && !payload.stream ? await response.clone().json().catch(() => null) : null;
+      const choice = answer?.choices?.[0];
+      const blocked = Boolean(choice) && !choice.message?.content && !choice.message?.tool_calls?.length;
+      const empty = answer?.choices?.length === 0;
+      if (!(RETRY_STATUS.has(response.status) || empty || blocked) || attempt >= retries) {
+        if (!blocked) return response;
+        // Passed on as an error: ST shows its message, where an empty reply would say nothing about why.
+        const reason = choice.finish_reason ?? "unknown";
+        log(`blocked: finish_reason=${reason}`);
+        return new Response(JSON.stringify({ error: { message: `上游没有返回内容 (finish_reason: ${reason})`, type: "empty_completion", finish_reason: reason } }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       await response.arrayBuffer();
-      log(`retry ${attempt + 1}/${retries}: ${empty ? "empty completion" : response.status}`);
+      log(`retry ${attempt + 1}/${retries}: ${blocked ? `finish_reason=${choice.finish_reason}` : empty ? "empty completion" : response.status}`);
       await sleep(Math.min(Number(response.headers.get("retry-after")) * 1000 || 1000 * 2 ** attempt, 10_000));
     }
   }
@@ -130,6 +140,7 @@ if (process.argv.includes("--self-test")) {
     if (picky && body.messages?.at(-1)?.role === "assistant") return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "Requests ending with a model turn are not supported." } }));
     const status = plan.shift() ?? 200;
     if (status === "empty") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 0 } }));
+    if (status === "blocked") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { content: null }, finish_reason: "prohibited_content" }], usage: { prompt_tokens: 12, completion_tokens: 0 } }));
     if (status !== 200) return res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: `fake ${status}` } }));
     if (body.stream) {
       res.writeHead(200, { "content-type": "text/event-stream" });
@@ -171,6 +182,18 @@ if (process.argv.includes("--self-test")) {
   plan.push("empty", "empty", "empty");
   r = await post("/v1/chat/completions", ask);
   assert.deepEqual((await r.json()).choices, [], "still empty when the retries run out: passed through, not turned into an error");
+  assert.equal(calls.length, 3);
+  calls.length = 0;
+  plan.push("blocked");
+  r = await post("/v1/chat/completions", ask);
+  assert.equal((await r.json()).choices[0].message.content, "ok", "a filtered answer is asked for again");
+  assert.equal(calls.length, 2);
+  calls.length = 0;
+  plan.push("blocked", "blocked", "blocked");
+  r = await post("/v1/chat/completions", ask);
+  const refused = await r.json();
+  assert.match(refused.error.message, /prohibited_content/, "when the retries run out the reason goes to the user, not an empty reply");
+  assert.equal(refused.choices, undefined);
   assert.equal(calls.length, 3);
   calls.length = 0;
   plan.push("empty");

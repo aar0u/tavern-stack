@@ -1,6 +1,6 @@
 // @name 剧情命令 /pic /imp
 // Commands that read the story and ask the chat model through a clean request (no roleplay preset):
-//   /pic  writes a Stable Diffusion prompt (STYLE below) and hands it to /sd;
+//   /pic  writes a Stable Diffusion prompt (STYLE below) into the input box as a ready /sd command, to edit and send;
 //   /imp  writes the player's next line or action into the input box;
 //   /sum  summarizes the whole chat into a window, to copy into the Author's Note or a world book entry.
 (() => {
@@ -106,7 +106,12 @@
     return { player: context.name1 || "the player", character, intro, recent, story, persona, card };
   }
 
-  const EXPLICIT_TERMS = /(?:做爱|性交|自慰|手淫|抽插|插进|耸动|肉棒|阴茎|鸡巴|阴道|小穴|骚穴|肉缝|阴唇|阴蒂|阴阜|乳头|内射|高潮|潮吹|射精|精液|淫水|爱液|白浆|骚逼|母狗|内裤|底裤|cock|penis|dick|pussy|vagina|cunt|fuck|orgasm|cum|semen|clitoris|anal)/i;
+  // Sentences with either are removed from what the model reads. Only EXPLICIT_TERMS also add the explicit tags: each of its terms appeared
+  // only inside explicit scenes in the saved chats. SCRUB_TERMS also appear alone in plain scenes ('鼻尖耸动', a childlike face), where tags
+  // for sex would be wrong; they are still kept from the model, which can take them for sexual content.
+  const EXPLICIT_TERMS = /(?:做爱|性交|自慰|手淫|抽插|插进|肉棒|阴茎|鸡巴|阴道|小穴|骚穴|肉缝|阴唇|阴蒂|阴阜|内射|高潮|潮吹|射精|精液|淫水|白浆|骚逼|母狗|内裤|底裤|cock|penis|dick|pussy|vagina|cunt|fuck|orgasm|cum|semen|clitoris|anal)/i;
+  const SCRUB_TERMS = /(?:稚嫩|耸动|乳头|爱液)/i;
+  const SCRUBBED_TERMS = new RegExp(`${EXPLICIT_TERMS.source}|${SCRUB_TERMS.source}`, "i");
 
   function sanitizeStory(text) {
     if (!text) return "";
@@ -115,7 +120,7 @@
       .map((line) =>
         line
           .split(/(?<=[。！？；\n])/)
-          .filter((sentence) => !EXPLICIT_TERMS.test(sentence))
+          .filter((sentence) => !SCRUBBED_TERMS.test(sentence))
           .join("")
       )
       .filter((line) => line.trim().length > 0)
@@ -179,20 +184,38 @@
     // 'Canvas: portrait, tags…' on one line is how some models answer; a bare 'portrait, upper body…' is a tag list, not a canvas line.
     const labelled = /^canvas\s*:\s*(portrait|landscape)\b[\s,.:]*/i.exec(lines[0] ?? "");
     if (labelled) lines.splice(0, 1, labelled[1], ...[lines[0].slice(labelled[0].length)].filter(Boolean));
-    const first = lines[0]?.toLowerCase().replace(/[^a-z]/g, "");
-    const given = first === "portrait" || first === "landscape" ? first : undefined;
-    const prompt = (given ? lines.slice(1) : lines).join(", ").replace(/^(tags|prompt)\s*:/i, "").replace(/[|{}]+/g, " ").replace(/\s+/g, " ").trim();
+    const canvasOf = (line) => {
+      const word = line?.toLowerCase().replace(/[^a-z]/g, "");
+      return word === "portrait" || word === "landscape" ? word : undefined;
+    };
+    const clean = (list) => list.join(", ").replace(/^(tags|prompt)\s*:/i, "").replace(/[|{}]+/g, " ").replace(/\s+/g, " ").trim();
+    let given = canvasOf(lines[0]);
+    let prompt = clean(given ? lines.slice(1) : lines);
+    if (!isTagList(prompt)) {
+      // Some replies decline the scene and then give a milder tag list anyway ('I cannot… Alternative Prompt: landscape / 1girl, …'): take that line.
+      const at = lines.findIndex(isTagLine);
+      if (at >= 0) {
+        prompt = clean([lines[at]]);
+        given = canvasOf(lines[at - 1]);
+      }
+    }
     return { canvas: FIXED_CANVAS[kind] ?? given ?? "landscape", prompt };
   }
 
   // Without a reasoning channel a small model sometimes writes its analysis instead of tags (about 1 in 5 for /pic you, 2824 characters
   // of 'Let me analyze…' went to the phone once). Tags are short; prose is not.
+  const isTagLine = (line) => {
+    const cleaned = line.trim().replace(/[.;]+$/, "");
+    return cleaned.split(",").length >= 5 && !/\*\*|[!?:]$/.test(cleaned) && isTagList(cleaned);
+  };
   const isTagList = (prompt) => prompt.length > 0 && prompt.length <= 1500 && prompt.split(",").every((tag) => tag.trim().length <= 80);
 
   function parseInput(input) {
     const text = input.trim();
-    const kind = text.toLowerCase();
-    return ["me", "you", "face", "bg", "last", "pov"].includes(kind) ? { kind, subject: "" } : { kind: "free", subject: text };
+    const forceNsfw = /\bnsfw\b/i.test(text);
+    const rest = text.replace(/\bnsfw\b/gi, "").trim();
+    const kind = (rest || "last").toLowerCase();
+    return ["me", "you", "face", "bg", "last", "pov"].includes(kind) ? { kind, subject: "", forceNsfw } : { kind: "free", subject: rest, forceNsfw };
   }
 
   const MALE_TERMS = /\b(1boy|1man|2boys|male|men)\b/i;
@@ -205,17 +228,20 @@
       .join(", ");
   }
 
-  function createPic({ context, generateRaw, triggerSlash, toastr }) {
-    return async function pic(input) {
+  const NSFW_BASE = "nsfw, uncensored, explicit, sex, intercourse, making love, intimate, passionate, heavy breathing, flushed face, blush, parted lips, saliva, sweat, bare skin, cleavage, bare breasts, nipples, areolae, pussy, penis";
+
+  // Asks the model for tags; null (after a toast) when there is nothing to draw or the model failed.
+  function createCompose({ context, generateRaw, toastr }) {
+    return async function compose(input, usage) {
       if (!input.trim()) {
-        toastr.info("/pic me | you | face | bg | last | pov | <名字、描述或场景>");
-        return;
+        toastr.info(`${usage} me | you | face | bg | last | pov | <名字、描述或场景>`);
+        return null;
       }
-      const { kind, subject } = parseInput(input);
+      const { kind, subject, forceNsfw } = parseInput(input);
       const material = gather(context());
       if (!material.story && !material.intro) {
         toastr.warning("聊天里还没有剧情可画");
-        return;
+        return null;
       }
       try {
         toastr.info("正在写提示词…");
@@ -227,23 +253,41 @@
           parsed = parseReply(kind, reply);
         }
         if (!isTagList(parsed.prompt)) throw new Error(reply.trim() ? `模型没有按格式返回标签: ${reply.slice(0, 80)}` : "模型返回了空内容");
-        const { canvas, prompt } = parsed;
-        const [width, height] = CONFIG[canvas];
-        let finalPrompt = prompt;
+        let prompt = parsed.prompt;
+        // The story is checked before sanitizeStory removes those sentences from the model's request: the model never sees them, so the tags come from here.
+        const isIntimate = forceNsfw || EXPLICIT_TERMS.test(material.story || "");
         if (kind === "pov") {
           const cleanPrompt = stripMale(prompt)
             .split(",")
             .map((t) => t.trim())
-            .filter((t) => t && !/^(1girl|looking at viewer|eye contact|pov)$/i.test(t))
+            .filter((t) => t && !/^(1girl|looking at viewer|eye contact|pov|pov hands)$/i.test(t))
             .join(", ");
-          finalPrompt = `pov, looking at viewer, 1girl, ${cleanPrompt}`;
+          prompt = isIntimate
+            ? `pov, looking at viewer, eye contact, pov hands, 1girl, ${NSFW_BASE}, ${cleanPrompt}`
+            : `pov, looking at viewer, 1girl, ${cleanPrompt}`;
+        } else if (isIntimate && (kind === "last" || kind === "free" || forceNsfw)) {
+          prompt = `${NSFW_BASE}, ${prompt}`;
         }
-        console.info("[pic]", kind, `${width}x${height}`, finalPrompt);
-        await triggerSlash(`/sd extend=false width=${width} height=${height} ${finalPrompt}`);
+        return { kind, canvas: parsed.canvas, prompt };
       } catch (error) {
         console.error("[pic]", error);
         toastr.error(`画图失败: ${error?.message ?? error}`);
+        return null;
       }
+    };
+  }
+
+  // The model's tags are not drawn but put into the box as a ready /sd command: the user edits them and presses Enter.
+  function createPic({ setInput, focusInput = () => {}, toastr, ...deps }) {
+    const compose = createCompose({ toastr, ...deps });
+    return async function pic(input) {
+      const result = await compose(input, "/pic");
+      if (!result) return;
+      const [width, height] = CONFIG[result.canvas];
+      console.info("[pic]", result.kind, `${width}x${height}`, result.prompt);
+      setInput(`/sd extend=false width=${width} height=${height} ${result.prompt}`);
+      focusInput();
+      toastr.info("标签已放进输入框，改完回车出图");
     };
   }
 
@@ -399,12 +443,12 @@
     { text: "总结", run: () => sum() },
   ];
 
-  const api = { CONFIG, STYLE, storyText, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, impText, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createSum, createMore, moreItems };
+  const api = { CONFIG, STYLE, NSFW_BASE, storyText, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, impText, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createSum, createMore, moreItems };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
     return;
   }
-  const runtime = { context: () => SillyTavern.getContext(), generateRaw, triggerSlash, toastr };
+  const runtime = { context: () => SillyTavern.getContext(), generateRaw, toastr };
   const page = window.parent.document;
   // `argument` says what the one optional text after the command is, for the autocomplete and /help. (Not the context's
   // registerSlashCommand: SillyTavern marks it deprecated in favour of SlashCommandParser.addCommandObject.)
@@ -422,9 +466,8 @@
       }),
     );
 
-  const imp = createImp({
-    ...runtime,
-    // Assigned, and an input event for SillyTavern to notice (its counters and draft saving listen to it).
+  // Assigned, and an input event for SillyTavern to notice (its counters and draft saving listen to it).
+  const inputBox = {
     setInput: (text) => {
       const box = page.getElementById("send_textarea");
       box.value = text;
@@ -435,7 +478,8 @@
       box?.focus();
       box?.setSelectionRange(box.value.length, box.value.length);
     },
-  });
+  };
+  const imp = createImp({ ...runtime, ...inputBox });
   // Runs inside the click of the popup's button, which a copy needs. Selecting the text box and copying also works where the clipboard API
   // does not exist (a page opened as http://192.168… on the phone).
   function copyText() {
@@ -460,7 +504,7 @@
       });
     },
   });
-  const pic = createPic(runtime);
+  const pic = createPic({ ...runtime, ...inputBox });
   const more = createMore({
     items: moreItems({
       pictures: SillyTavern.getContext().extensionSettings?.story?.pictures !== false,
@@ -478,6 +522,6 @@
   });
   register("imp", "代写：按最新剧情写接下来发生的内容（默认是主角的台词或动作），放进输入框，不自动发送；输入框里是上次的结果时重抽", imp, "草稿（可以不写；草稿写谁就写谁，可以是 NPC）");
   register("sum", "总结：把整个聊天总结成一份长期记忆，显示在弹窗里，方便复制", sum);
-  register("pic", "画图：让模型写 SD 标签再交给 /sd", pic, "me | you | face | bg | last | pov，或者名字、描述、“A和B热吻”");
+  register("pic", "画图：让模型写 SD 标签，作为 /sd 命令放进输入框，不自动出图；改完回车出图", pic, "me | you | face | bg | last | pov，或者名字、描述、“A和B热吻”");
   register("more", "更多：弹出菜单：画此刻、画第一人称(POV)、画我、画NPC、画特写、画景、画输入框里的内容、总结", more);
 })();
