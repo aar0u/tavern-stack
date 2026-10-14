@@ -134,8 +134,12 @@ st.sh logs            把所有服务和 leyline 的日志，每行带时间，�
 ### 图片反推标签（`tools/wd-tag.sh`）
 
 ```
-tools/wd-tag.sh [-v] [-n] 图片.png     标签（逗号分隔）打到标准输出，同时复制到剪贴板；-n 不复制；-v 再给分级和每个标签的置信度（这些不复制）
+tools/wd-tag.sh                         交互：Ctrl+V 或回车 = 剪贴板里的图片（剪贴板里是文件路径文字也行）；粘贴或拖入文件路径；q 退出
+tools/wd-tag.sh [-v] [-n] 图片.png     一次：标签（逗号分隔）打到标准输出，同时复制到剪贴板；-n 不复制；-v 再给分级和每个标签的置信度（这些不复制）
+... | tools/wd-tag.sh -                图片从标准输入来
 ```
+
+交互模式是个循环，每张图 10 到 40 秒。终端自己的粘贴（`Ctrl+Shift+V`）只能粘文字，图片粘不进来；所以脚本把 `Ctrl+V` 绑成"读剪贴板里的图片"（大多数 Linux 终端里 `Ctrl+V` 不是粘贴键，按键会原样交给程序；在把 `Ctrl+V` 当粘贴键的终端，比如 Windows Terminal，按键到不了程序，用回车）。图片用 `wl-paste`、`xclip`、`pngpaste` 读；拖入的路径带引号、反斜杠转义的空格、`file://` 都认。每次出结果后标签会覆盖剪贴板，所以下一张图要重新复制。
 
 调 [wd-tagger Space](https://huggingface.co/spaces/SmilingWolf/wd-tagger) 的 Gradio 接口（上传、调用、读事件流），默认模型是最准的 `wd-eva02-large-tagger-v3`。剪贴板按顺序试 `wl-copy`、`xclip`、`xsel`、`pbcopy`、`clip.exe`，用第一个能用的；都没有或都失败只在标准错误里说一声，标签照常打出来，不算错误；`WD_COPY=0` 等于 `-n`。环境变量：`WD_MODEL`（换模型，名字写错时接口会列出可选项）、`WD_GENERAL`（默认 0.35）、`WD_CHARACTER`（默认 0.85）、`WD_URL`（指向同一个应用的别的服务器，比如自己本地起的）、`HF_TOKEN`（可选，多一点配额）。上游忙时重试 3 次；Space 自己返回错误（比如模型名不对）不重试，退出码 3，连不上退出码 1。注意：**图片会上传到 Space**。实测每张 11 到 20 秒（和模型大小无关，主要是 Space 和网络），适合偶尔核对；要批量或放进流程里反复调，在本地跑同系列的 ONNX 模型（`wd-swinv2-tagger-v3`，CPU 上约 0.35 秒一张）。
 
