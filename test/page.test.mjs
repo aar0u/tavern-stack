@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const listeners = {};
+const windowListeners = {};
 const scrolled = [];
 const requests = [];
 const pressed = [];
@@ -12,10 +13,10 @@ const fakeFrame = (id) => {
   const handlers = [];
   const inner = {
     keydown: [],
-    head: { children: [], append(child) { this.children.push(child); } },
-    getElementById(wanted) { return this.head.children.find((c) => c.id === wanted && !c.removed) ?? null; },
-    createElement: (tag) => element(tag),
-    addEventListener(type, fn) { if (type === "keydown") this.keydown.push(fn); },
+    animationstart: [],
+    animations: [],
+    getAnimations() { return this.animations; },
+    addEventListener(type, fn) { if (this[type] && !this[type].includes(fn)) this[type].push(fn); },
     removeEventListener() {},
   };
   return { ...element("IFRAME", { id }), contentDocument: inner, addEventListener: (type, fn) => handlers.push(fn), load: () => handlers.forEach((fn) => fn()), inner };
@@ -57,7 +58,7 @@ runInNewContext(readFileSync(new URL("../seed/scripts/page.js", import.meta.url)
         executeQuickReply: async (set, id) => pressed.push([set, id]),
       },
     },
-    addEventListener() {},
+    addEventListener: (type, handler) => (windowListeners[type] = handler),
   },
   IntersectionObserver: class { constructor(cb) { intersect = cb; } observe() {} unobserve() {} disconnect() {} },
   MutationObserver: class {
@@ -141,23 +142,37 @@ listeners.click.forEach((handler) => handler({ target: {} }));
 assert.equal(requests.length, 2, "a click on something that is no button is ignored");
 
 // --- message frames out of view
-const paused = (frame) => frame.inner.getElementById("pause-offscreen-animations");
-assert.equal(paused(message), null, "a frame is left running until it is known to be off screen");
+const animation = (iterations, playState = "running") => ({ playState, calls: [], effect: { getComputedTiming: () => ({ iterations }) }, pause() { this.playState = "paused"; this.calls.push("pause"); }, play() { this.playState = "running"; this.calls.push("play"); } });
+const endless = animation(Infinity);
+const oneShot = animation(1); // reveals content (opacity 0 until it ends): frozen at its start the content would stay invisible
+const pausedByPage = animation(Infinity, "paused"); // somebody else's: not ours to resume
+message.inner.animations.push(endless, oneShot, pausedByPage);
+assert.deepEqual([endless.calls, oneShot.calls], [[], []], "a frame is left running until it is known to be off screen");
 intersect([{ target: message, isIntersecting: false }]);
-assert.match(paused(message).textContent, /animation-play-state:paused/, "off screen: animations paused");
+assert.deepEqual([endless.playState, oneShot.playState], ["paused", "running"], "off screen: the endless animation is paused, the one-shot one is left to finish");
 intersect([{ target: message, isIntersecting: false }]);
-assert.equal(message.inner.head.children.length, 1, "no second style for the same frame");
+assert.deepEqual(endless.calls, ["pause"], "once, not again for the same animation");
 intersect([{ target: message, isIntersecting: true }]);
-assert.equal(paused(message), null, "back on screen: running again");
+assert.deepEqual([endless.playState, endless.calls, oneShot.calls, pausedByPage.calls], ["running", ["pause", "play"], [], []], "back on screen: only what was paused here runs again");
 intersect([{ target: message, isIntersecting: false }]);
-message.inner.head.children.length = 0;
+const late = animation(Infinity);
+message.inner.animations.push(late);
+message.inner.animationstart.forEach((handler) => handler());
+assert.equal(late.playState, "paused", "an endless animation that starts later in a frame out of view is paused too");
+const rerendered = animation(Infinity);
+message.inner.animations = [rerendered];
 message.load();
-assert.ok(paused(message), "a re-rendered message (new document) is paused again while it is off screen");
+assert.equal(rerendered.playState, "paused", "a re-rendered message (new document) is paused again while it is off screen");
 const added = fakeFrame("TH-message--1--0");
+const addedAnimation = animation(Infinity);
+added.inner.animations.push(addedAnimation);
 mutate([{ addedNodes: [added] }]);
 intersect([{ target: added, isIntersecting: false }]);
-assert.ok(paused(added), "a frame added later is watched too");
-assert.equal(paused(script), null, "only message frames are touched");
+assert.equal(addedAnimation.playState, "paused", "a frame added later is watched too");
+const scriptAnimation = animation(Infinity);
+script.inner.animations.push(scriptAnimation);
+script.load();
+assert.equal(scriptAnimation.playState, "running", "only message frames are touched");
 assert.equal(added.inner.keydown.length, 1, "and gets the key listener");
 
 // --- the pill above the stop button
@@ -196,4 +211,9 @@ events.stream_token_received("x".repeat(50));
 stopBox.width = 40;
 syncStop();
 assert.equal(pill.textContent, "0s", "the next reply starts from zero, with no characters yet");
+
+// --- leaving the page lets what was paused run again
+assert.deepEqual([rerendered.playState, addedAnimation.playState], ["paused", "paused"]);
+windowListeners.pagehide();
+assert.deepEqual([rerendered.playState, addedAnimation.playState, oneShot.calls], ["running", "running", []], "pagehide resumes the animations this script paused and touches nothing else");
 console.log("page tests passed");

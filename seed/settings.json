@@ -36,7 +36,7 @@
             "skip_codeblocks": true,
             "apply_regex": true,
             "skip_tags": false,
-            "regex_pattern": "/<!--[\\s\\S]*?-->|<(?!(?:content|now_plot)\\b)([\\w-]+)\\b[^>]*>[\\s\\S]*?<\\/\\1>|<[\\w-]+\\s*\\/>|<\\/?(?:content|now_plot)>|^#{1,6}[ \\t].*$/gim",
+            "regex_pattern": "/<!--[\\s\\S]*?-->|<([\\w~-]*(?:think|thought|reason|analy)[\\w~-]*)(?=[\\s\\/>])[^>]*>[\\s\\S]*?<\\/\\1>|<([\\w~-]+)(?=[\\s\\/>])[^>]*>\\s*[\\[{][\\s\\S]*?<\\/\\2>|^#{1,6}[ \\t].*$/gim",
             "Edge": {
                 "voiceMap": {
                     "[Default Voice]": "zh-CN-XiaoxiaoNeural"

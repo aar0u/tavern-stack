@@ -5,7 +5,7 @@
 //   the 全屏 quick reply (its message is empty) toggles browser fullscreen;
 //   while a reply is being written, a pill above the stop button shows a pulsing dot, the elapsed time and the characters streamed so far
 //   (or how long nothing new has come, when it has stalled);
-//   message frames outside the viewport get their CSS animations paused.
+//   message frames outside the viewport get their endless animations paused (not the one-shot ones: see pause below).
 // Alt+/ works whatever has the focus (SillyTavern puts it back into the input box after every send). Holding a key acts once.
 // The key listener runs in the capture phase, ahead of other handlers that might stop the event.
 // Message bodies are srcdoc iframes (the card's renderer). Key events in them never reach the page, so every frame gets the key listener;
@@ -62,8 +62,6 @@ const onFullscreenClick = (e) => {
   doc.documentElement.requestFullscreen({ navigationUI: "hide" }).catch((error) => window.parent.toastr?.error(`全屏失败：${error.message}`));
 };
 
-const STYLE_ID = "pause-offscreen-animations";
-const PAUSED_CSS = "*,*::before,*::after{animation-play-state:paused!important}";
 const keyTargets = new Set();
 const onScreen = new Map(); // message frame -> whether it is in (or near) the viewport
 const watched = new WeakSet();
@@ -74,18 +72,26 @@ const bindKeys = (target) => {
   keyTargets.add(target);
 };
 
+// Only endless animations are paused: a one-shot animation that reveals content (opacity 0 until it ends, fill forwards) frozen at its start
+// would leave that content invisible until the frame is scrolled into view (measured in Chrome: opacity 0.07 to 0.22 for good).
+const frozen = new WeakSet(); // the animations this script paused
+const freeze = (animation) => {
+  if (animation.playState !== "running" || animation.effect?.getComputedTiming().iterations !== Infinity) return;
+  animation.pause();
+  frozen.add(animation);
+};
 const pause = (frame) => {
   if (!onScreen.has(frame)) return;
   try {
     const target = frame.contentDocument;
-    if (!target?.head) return;
-    const style = target.getElementById(STYLE_ID);
-    if (onScreen.get(frame) !== false) return style?.remove();
-    if (style) return;
-    const created = target.createElement("style");
-    created.id = STYLE_ID;
-    created.textContent = PAUSED_CSS;
-    target.head.append(created);
+    if (!target) return;
+    for (const animation of target.getAnimations()) {
+      if (onScreen.get(frame) === false) freeze(animation);
+      else if (frozen.has(animation)) {
+        frozen.delete(animation);
+        animation.play();
+      }
+    }
   } catch {}
 };
 
@@ -111,9 +117,11 @@ const watch = (frame) => {
     onScreen.set(frame, true);
     visibility.observe(frame);
   }
+  const onStart = () => pause(frame); // an animation that starts later (a class toggled, a script) is paused too while the frame is out of view
   const attach = () => {
     try {
       bindKeys(frame.contentDocument); // null for a cross-origin frame
+      frame.contentDocument.addEventListener("animationstart", onStart, true);
     } catch {}
     pause(frame);
   };

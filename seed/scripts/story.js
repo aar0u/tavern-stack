@@ -27,8 +27,10 @@
     "- Short English tags, comma-separated, most important first. No sentences, names, XML, parentheses or Chinese.",
     // Without it the answer doubles in length and turns into sentences (6 runs: 299 to 686 characters); with 400 it still drifts a little
     "- The whole prompt is at most about 250 characters.",
-    "- One person: start with 'full body portrait', then the person tag ('1girl' or '1boy'/'1man'), then 'solo', then age, hair color and style, eye color, expression, clothing (or 'bare shoulders, undressed' if bathing or relaxing), and end with 'simple background' unless the story names a setting to show. A bust: 'portrait, upper body, 1girl, solo'.",
-    "- Two people: start with the person tags ('1girl, 1boy'), then the interaction/pose tags (couple, embrace, kissing, lying on bed, straddling, intimate, romantic, passionate...), then each person's own tags together, each group starting with that person's tag again ('1girl, red hair, 1boy, brown hair'): tags of different people must not mix. Never 'solo'.",
+    "- One person: start with 'full body portrait', then the person tag ('1woman' or '1man' for an adult, '1girl' or '1boy' for a child or teenager, by the age the story gives), then 'solo', then age, hair color and style, eye color, expression, clothing (or 'bare shoulders, undressed' if bathing or relaxing), and end with 'simple background' unless the story names a setting to show. A bust: 'portrait, upper body, 1girl, solo'.",
+    "- Two people: start with the person tags ('1woman, 1man'; 'girl' and 'boy' only for a child or teenager), then the interaction/pose tags (couple, embrace, kissing, lying on bed, straddling, intimate, romantic, passionate...), then each person's own tags together, each group starting with that person's tag again ('1woman, red hair, 1man, brown hair'): tags of different people must not mix. Never 'solo'.",
+    // A scene with three people was written as a pair (0/8 had a third person; 6/8 with this line and 'every character' in the task)
+    "- Three or more people: start with a count tag for each sex and age ('3women', '2men, 1woman', '1girl, 2boys'), then the interaction tags, then one group per person as for two people. Every person who is in the scene gets a group.",
     "- A background: start with 'scenery', no people: the place type, landscape and weather, time of day and light, two or three signature objects, color palette and mood words.",
     "- Intimate / romantic scenes: describe physical proximity, poses (embrace, on bed, straddling), facial expressions (blush, heavy breathing, parted lips, closed eyes), and skin / attire state (bare skin, undressed, disheveled clothes, cleavage). Do not invent heavy jackets, coats, or armor if the scene is relaxed, bedroom, or intimate.",
     "- First-person POV: start with 'pov, 1girl, looking at viewer', her facial expression, her exact body posture/pose from the latest scene, her attire from the scene, then hair and eye color.",
@@ -73,7 +75,7 @@
     },
     bg: () => "Write the prompt for a background picture of the setting of the latest scene, with no people, matching its mood.",
     last: (player) =>
-      `Write the prompt for one picture of the latest scene in the story text: identify the people present (if ${player} is interacting with another character, always include both characters together as a pair, never solo), their looks, pose/interaction, and state of dress. If the scene is intimate or romantic, faithfully describe their physical proximity, embrace, bare skin, and facial expressions; otherwise describe their setting and attire.`,
+      `Write the prompt for one picture of the latest scene in the story text: identify the people present (if ${player} is interacting with another character, always include every character who is in the scene together, never solo), their looks, pose/interaction, and state of dress. If the scene is intimate or romantic, faithfully describe their physical proximity, embrace, bare skin, and facial expressions; otherwise describe their setting and attire.`,
     pov: (player) =>
       `Write the prompt for a first-person point-of-view (POV) anime illustration of the female character interacting with ${player} in the latest scene. The camera/viewer IS ${player}. Identify the female character present in the latest scene (her hair color, eyes, facial expression, her pose, body posture, and attire from the story text), and depict HER facing the viewer/camera (1girl, looking at viewer). Do not include any male characters, male appearance, or ${player}'s traits.`,
     free: (player, subject) =>
@@ -93,15 +95,31 @@
   const isJson = (text) => (text.match(/[{}[\]]/g) ?? []).length / text.length > 0.01 || (text.match(/"\s*:\s*[["{\d]/g) ?? []).length >= 3;
   const letters = (text) => (text.match(/\p{L}/gu) ?? []).length;
 
-  function storyText(mes) {
-    const tidy = (text) => text.replace(/\n{2,}/g, "\n").trim();
-    const flat = (text) => tidy(text.replace(/<\/?[^\s<>]+[^>]*>/g, ""));
-    const plain = mes.replace(/<!--[\s\S]*?-->/g, "");
+  const tidy = (text) => text.replace(/\n{2,}/g, "\n").trim();
+  const flat = (text) => tidy(text.replace(/<\/?[^\s<>]+[^>]*>/g, ""));
+  // The candidates, the one with the most letters first.
+  const segmentsOf = (plain) => {
     const segments = [];
-    const outside = plain.replace(/<([^\s<>/!]+)[^>]*>([\s\S]*?)<\/\1>/g, (_all, name, inner) => (segments.push({ name, text: flat(inner) }), "\n"));
-    segments.push({ name: "", text: flat(outside) });
-    const best = segments.filter((s) => s.text && !isReasoning(s.name) && !isJson(s.text)).sort((a, b) => letters(b.text) - letters(a.text))[0];
-    return best?.text ?? flat(plain);
+    const outside = plain.replace(/<([^\s<>/!]+)[^>]*>([\s\S]*?)<\/\1>/g, (_all, name, inner) => (segments.push({ name, raw: inner }), "\n"));
+    segments.push({ name: "", raw: outside });
+    return segments
+      .map((s) => ({ ...s, text: flat(s.raw) }))
+      .filter((s) => s.text && !isReasoning(s.name) && !isJson(s.text))
+      .sort((a, b) => letters(b.text) - letters(a.text));
+  };
+
+  // `narration` is for reading aloud: a block that is mostly one inner block (a <content> holding a <time>, a <location> and the <now_plot>)
+  // is read as that inner block, so the date and the place are not read out before every reply. The model gets them, as context.
+  function storyText(mes, { narration = false } = {}) {
+    const plain = mes.replace(/<!--[\s\S]*?-->/g, "");
+    let best = segmentsOf(plain)[0];
+    if (!best) return flat(plain);
+    while (narration && best.name) {
+      const inner = segmentsOf(best.raw)[0];
+      if (!inner?.name || letters(inner.text) < 0.6 * letters(best.text)) break;
+      best = inner;
+    }
+    return best.text;
   }
 
   function gather(context, messages = CONFIG.storyMessages) {
@@ -284,7 +302,7 @@
           const cleanPrompt = stripMale(prompt)
             .split(",")
             .map((t) => t.trim())
-            .filter((t) => t && !/^(1girl|looking at viewer|eye contact|pov|pov hands)$/i.test(t))
+            .filter((t) => t && !/^(1girl|1woman|looking at viewer|eye contact|pov|pov hands)$/i.test(t))
             .join(", ");
           added = Boolean(why);
           prompt = added
@@ -469,13 +487,30 @@
     { text: "总结", run: () => sum() },
   ];
 
-  const api = { CONFIG, STYLE, NSFW_BASE, storyText, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, impText, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createSum, createMore, moreItems };
+  // SillyTavern's TTS cleans a message with one regex, which can only delete, so it cannot pick the story out of a reply. The provider's
+  // processText runs after that regex, on text that still has its tags: there the story is picked the way /pic picks it. It is reached through
+  // the page's own module instance (a script frame has a module map of its own, and a patch there would never be seen by the TTS extension).
+  // Only the Edge provider. With another one, or if SillyTavern changes this, nothing is patched and the regex alone cleans the text.
+  const TTS_PROVIDERS = [["/scripts/extensions/tts/edge.js", "EdgeTtsProvider"]];
+  async function installTts(host) {
+    for (const [path, name] of TTS_PROVIDERS) {
+      try {
+        const loaded = await host.Function(`return import(${JSON.stringify(path)})`)();
+        loaded[name].prototype.processText = (text) => storyText(text, { narration: true });
+      } catch (error) {
+        console.warn("[story] TTS: the story is not picked by content:", path, error);
+      }
+    }
+  }
+
+  const api = { CONFIG, STYLE, NSFW_BASE, storyText, installTts, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, impText, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createSum, createMore, moreItems };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
     return;
   }
   const runtime = { context: () => SillyTavern.getContext(), generateRaw, toastr };
   const page = window.parent.document;
+  installTts(window.parent);
   // `argument` says what the one optional text after the command is, for the autocomplete and /help. (Not the context's
   // registerSlashCommand: SillyTavern marks it deprecated in favour of SlashCommandParser.addCommandObject.)
   const { SlashCommandParser, SlashCommand, SlashCommandArgument, ARGUMENT_TYPE } = SillyTavern.getContext();

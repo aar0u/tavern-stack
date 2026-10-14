@@ -26,6 +26,28 @@ assert.equal(
   "他走上街头。",
   "a card whose story is in <game>: the planning text before it is not the story",
 );
+// reading aloud: the date and the place inside the story block are not read out; the model still gets them
+const dated = "<content>\n<time>晨</time>\n<location>城门口</location>\n<now_plot>\n她推开门，风灌了进来。\n</now_plot>\n</content>\n<UpdateVariable>x</UpdateVariable>";
+assert.equal(story.storyText(dated), "晨\n城门口\n她推开门，风灌了进来。");
+assert.equal(story.storyText(dated, { narration: true }), "她推开门，风灌了进来。", "narration reads the inner block that is most of the story");
+assert.equal(story.storyText("<game>\n他走上街头。\n</game>", { narration: true }), "他走上街头。", "a story block with nothing inside is read as it is");
+assert.equal(story.storyText("<content>\n<a>她开了门，风很大。</a><b>门外是一条长街。</b>\n</content>", { narration: true }), "她开了门，风很大。门外是一条长街。", "no inner block is most of it: all of it is read");
+
+// --- the TTS hook: SillyTavern's own regex can only delete, so the provider's processText picks the story
+{
+  class FakeProvider {}
+  const asked = [];
+  const host = { Function: (code) => async () => (asked.push(code), { EdgeTtsProvider: FakeProvider }) };
+  await story.installTts(host);
+  assert.deepEqual(asked, ['return import("/scripts/extensions/tts/edge.js")'], "the page's own copy of the Edge provider is asked for");
+  assert.equal(new FakeProvider().processText(dated), "她推开门，风灌了进来。", "text goes through the story pick, in narration mode");
+  const warned = [];
+  const warn = console.warn;
+  console.warn = (...args) => warned.push(args[0]);
+  await story.installTts({ Function: () => async () => { throw new Error("no such module"); } });
+  console.warn = warn;
+  assert.equal(warned.length, 1, "a provider that cannot be reached is a warning, not an error");
+}
 
 // --- gather
 const chat = [
@@ -61,6 +83,8 @@ for (const kind of ["you", "face"]) {
 assert.match(story.buildRequest("last", "", material, true)[0].content, /When two faces touch[\s\S]*Never write a pet[\s\S]*No animal words/);
 assert.doesNotMatch(story.buildRequest("last", "", material)[0].content, /When two faces touch|Never write a pet|animal words/);
 assert.ok(story.buildRequest("last", "", material, true)[0].content.endsWith("the second line is the tags."), "the canvas line stays last");
+assert.match(story.buildRequest("last", "", material)[0].content, /Three or more people/, "a scene of three is not written as a pair");
+assert.doesNotMatch(story.buildRequest("last", "", material)[1].content, /as a pair/);
 for (const kind of ["me", "you", "face", "bg", "last", "free"]) {
   assert.doesNotMatch(story.buildRequest(kind, "x", material)[1].content, /\bDraw\b/, "'Draw …' trips the upstream image-quota classifier");
 }
@@ -175,6 +199,10 @@ assert.equal(h.log.slash[0], "/sd extend=false width=768 height=512 1girl, 1boy,
 h = harness("portrait\n1girl, smiling, looking at viewer, purple coat, green eyes");
 await h.run("pov");
 assert.equal(h.log.slash[0], "/sd extend=false width=512 height=768 pov, looking at viewer, 1girl, smiling, purple coat, green eyes", "pov with regular scene preserves clothes");
+
+h = harness("portrait\n1woman, smiling, looking at viewer, purple coat, green eyes");
+await h.run("pov");
+assert.equal(h.log.slash[0], "/sd extend=false width=512 height=768 pov, looking at viewer, 1girl, smiling, purple coat, green eyes", "pov: an adult '1woman' is not written twice");
 
 h = harness("portrait\n1girl, 1boy, lying on bed, lifted skirt, blush, green eyes, brown hair");
 await h.run("pov");
@@ -297,6 +325,7 @@ const box = { value: "「走。」", events: [], focus() { this.focused = true; 
 const summaryBox = { select() { this.selected = true; } };
 const clipboard = [];
 const toastsSeen = [];
+const pageTtsProvider = class {};
 const pageDocument = {
   defaultView: { Event: class { constructor(type, init) { Object.assign(this, { type }, init); } } },
   getElementById: (id) => ({ send_textarea: box, "st-sum-text": summaryBox })[id] ?? null,
@@ -304,7 +333,7 @@ const pageDocument = {
 };
 runInNewContext(readFileSync(here, "utf8"), {
   console,
-  window: { parent: { document: pageDocument } },
+  window: { parent: { document: pageDocument, Function: () => async () => ({ EdgeTtsProvider: pageTtsProvider }) } },
   SillyTavern: {
     getContext: () => ({
       ...context,
@@ -319,6 +348,8 @@ runInNewContext(readFileSync(here, "utf8"), {
   generateRaw: async () => "portrait\n1boy, brown hair",
   toastr: { info() {}, warning() {}, error: (text) => toastsSeen.push(["error", text]), success: (text) => toastsSeen.push(["success", text]) },
 });
+await new Promise((resolve) => setTimeout(resolve));
+assert.equal(typeof pageTtsProvider.prototype.processText, "function", "the script patches the page's TTS provider when it starts");
 assert.deepEqual(registered.map((registeredCommand) => registeredCommand.name).sort(), ["imp", "more", "pic", "sum"]);
 const command = (name) => registered.find((registeredCommand) => registeredCommand.name === name).callback;
 assert.deepEqual(registered.map((c) => [c.name, c.unnamedArgumentList.length]).sort(), [["imp", 1], ["more", 0], ["pic", 1], ["sum", 0]], "/imp and /pic take one optional text, the others none");
