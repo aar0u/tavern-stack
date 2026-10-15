@@ -17,7 +17,7 @@ pkg="$stage/st-lite"
 mkdir -p "$pkg/seed"
 
 cp "$script_dir/init.sh" "$script_dir/merge-settings.mjs" "$pkg/"
-cp -r "$script_dir/seed/scripts" "$script_dir/seed/QuickReplies" "$pkg/seed/"
+cp -r "$script_dir/seed/scripts" "$script_dir/seed/QuickReplies" "$script_dir/seed/avatars" "$pkg/seed/"
 cp "$script_dir/docker-compose.lite.yml" "$pkg/docker-compose.yml"
 cp "$script_dir/lite-README.txt" "$pkg/README.txt"
 llm_host="$({ sed -n 's/^LLM_HOST=//p' "$script_dir/.env" 2>/dev/null || true; } | tail -n 1 | tr -d "'\"")"

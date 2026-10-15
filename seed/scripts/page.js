@@ -6,7 +6,8 @@
 //   while a reply is being written, a pill above the stop button shows a pulsing dot, the elapsed time and the characters streamed so far
 //   (or how long nothing new has come, when it has stalled);
 //   message frames outside the viewport get their endless animations paused (not the one-shot ones: see pause below).
-// Alt+/ works whatever has the focus (SillyTavern puts it back into the input box after every send). Holding a key acts once.
+// Alt+/ works whatever has the focus. Sending a message takes the focus out of the input box, so the other keys work while the reply is
+// written. Holding a key acts once.
 // The key listener runs in the capture phase, ahead of other handlers that might stop the event.
 // Message bodies are srcdoc iframes (the card's renderer). Key events in them never reach the page, so every frame gets the key listener;
 // and they keep animating after being scrolled out of view (about 100 running animations measured, one core busy, gone when the tab was
@@ -191,6 +192,12 @@ eventOn(tavern_events.STREAM_TOKEN_RECEIVED, (text) => {
     streamed = length;
     lastGrowth = Date.now();
   }
+});
+
+// SillyTavern leaves the focus in the input box after a send (Enter keeps it there, and its send, regenerate, continue and impersonate
+// buttons put it back), so the shortcuts above would not work during the reply. A send takes the focus out; / brings it back.
+eventOn(tavern_events.GENERATION_STARTED, (type, options, dryRun) => {
+  if (!dryRun && !options?.quiet_prompt) doc.getElementById("send_textarea")?.blur();
 });
 
 bindKeys(doc);

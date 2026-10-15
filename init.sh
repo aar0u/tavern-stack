@@ -29,6 +29,7 @@ user_dir="$app_dir/data/default-user"
 seed_dir="${ST_SEED_DIR:-/seed}"
 
 # Seed files overwrite their counterparts in the data dir on every start; edit them in the repo, not in the UI.
-mkdir -p "$user_dir/QuickReplies"
+mkdir -p "$user_dir/QuickReplies" "$user_dir/User Avatars"
 cp -f "$seed_dir"/QuickReplies/*.json "$user_dir/QuickReplies/"
+cp -f "$seed_dir"/avatars/*.png "$user_dir/User Avatars/"
 exec node "${ST_MERGE_SETTINGS:-/merge-settings.mjs}" "$seed_dir" "$user_dir/settings.json" "$app_dir/default/content/settings.json"
