@@ -19,7 +19,7 @@
                 "position": 0
             }
         },
-        "custom_css": "@media (min-width: 769px) {\n  .mes_text,\n  .mes_text * {\n    font-size: 18px !important;\n  }\n}"
+        "custom_css": "@media (min-width: 769px) {\n  .mes_text,\n  .mes_text * {\n    font-size: 18px !important;\n    line-height: 1.3 !important;\n  }\n}"
     },
     "extension_settings": {
         "story": {
