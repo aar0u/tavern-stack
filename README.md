@@ -1,20 +1,23 @@
 # tavern-stack
 
-SillyTavern（ST）加一个 LLM 网关、用文件管设置的 seed、酒馆助手脚本，以及给其他机器用的两种打包（精简版 Docker、手机 Termux）。全部由 `docker-compose.yml` 启动。
+SillyTavern（ST）加一个 LLM 网关、用文件管设置的 seed、酒馆助手脚本，以及给其他机器用的部署和打包（远端 Docker、精简版 Docker、手机 Termux）。主机和远端 mc 用同一个 `docker-compose.yml`。
 
-ST 里的聊天地址永远是 `http://gateway:8789/v1`。换上游只改 `.gateway.env`，ST 的设置不动。
+ST 里的聊天地址是 `http://gateway:8789/v1`（精简版和手机版例外，见"打包"）。换上游只改 `.gateway.env`，ST 的设置不动。
 
 ```
 ./st.sh        重启容器（先重跑 st-init，seed 的改动才生效）
 ./st.sh re     重建容器（改了 docker-compose.yml 之后用）
 ./st.sh logs   所有服务的日志（带时间）写进 $SCRATCH/st/all.log，容器重建后要重开
 
-gateway      gateway.mjs：OpenAI 兼容上游前面的一层
+gateway      gateway.mjs：OpenAI 兼容上游前面的一层，发布 0.0.0.0:8789
+st-perms     一次性任务：建状态目录并改成 1000:1000，免得 Docker 建成 root 的
 st-init      一次性任务：装酒馆助手、提示词模板、Edge TTS 插件，再应用 ./seed
 sillytavern  :8000，局域网可访问
 ```
 
-上游（CLIProxyAPI）不在这个仓库里，`.gateway.env` 的 `UPSTREAM_URL` 现在指向云上的服务。`.env`（不提交）可放 `LLM_HOST`，也就是这台机器在局域网里的地址，打精简版包时用。
+上游（CLIProxyAPI）不在这个仓库里，`.gateway.env` 的 `UPSTREAM_URL` 现在指向云上的服务。
+
+状态目录由环境变量 `ST_ROOT` 决定（下面有 `config`、`data`、`plugins`、`extensions`）：`st.sh` 设为 `$SCRATCH/st`，远端和精简版的 `.env` 设为 `./data`。`ST_RESTART` 是容器的 `restart` 策略，默认 `no`，远端和精简版设为 `unless-stopped`。`.env`（不提交）里的 `LLM_HOST` 是精简版包里网关的地址，默认 `gateway.example`。
 
 ## 网关
 
@@ -56,11 +59,13 @@ sillytavern  :8000，局域网可访问
 ## 打包
 
 ```
-./pack-lite.sh [输出]     另一台机器上的 Docker 版：只有 ST 和 st-init，聊天走这台机器的网关，没有生图
+./deploy_to_mc.sh [主机]  部署 ST 和网关到远端（默认 ssh 主机 mc），那台机器上已有 leyline
+./pack-lite.sh [输出]     另一台机器上的 Docker 版：只有 ST 和初始化，聊天走 LLM_HOST 上的网关，没有生图
 ./pack-mobile.sh [输出]   手机 Termux：ST 和网关都在手机上，聊天直连 .gateway.env 里的上游
 ```
 
-- 精简版的 seed 和这里只差两处：去掉 `sd`，`story.pictures` 设为 `false`。`.env` 里的 `LLM_HOST` 没设时 `pack-lite.sh` 会报错。解压后 `docker compose up -d --force-recreate`。
+- 远端：把 `docker-compose.yml`、`init.sh`、`merge-settings.mjs`、`gateway.mjs`、seed 传到远端的 `~/others/tavern-stack`，状态在那里的 `./data`，然后 `docker compose up -d --force-recreate`。`sd` 的地址同手机版改成 `192.168.31.171`。远端的 `.gateway.env` 不会被覆盖；第一次部署时按 `docker port leyline` 查到的端口生成 `UPSTREAM_URL=http://host.docker.internal:<端口>/v1`，`MODEL` 和 `BODY` 要到远端自己填。网关的 8789 端口对外开放且没有鉴权，云上的安全组要放行。
+- 精简版是同一份 `docker-compose.yml` 去掉 `gateway` 服务，`.env` 写 `ST_ROOT=./data` 和 `ST_RESTART=unless-stopped`。seed 和这里只差三处：去掉 `sd`，`story.pictures` 设为 `false`，`custom_url` 改成 `http://<LLM_HOST>:8789/v1`（`extra_hosts` 只收 IP，而默认的 `LLM_HOST` 是域名）。换网关地址要改包里 `seed/settings.json` 的 `custom_url`。解压后 `docker compose up -d --force-recreate`。
 - 手机版的 `.gateway.env` 原样带进去（里面可能有 key，别外传压缩包）。`sd` 的三个地址改成 `192.168.31.171`，PC 开着时生图可用，`story.pictures` 保持 `true`。解压后 `bash start.sh`（第一次会装 node、clone ST、装扩展），访问 `http://<手机IP>:8000`。更新时用 `tar -xzf … --exclude='st-mobile/SillyTavern'`，不要覆盖已装的 ST。
 
 ## 图像后端
