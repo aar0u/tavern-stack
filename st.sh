@@ -5,10 +5,9 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-: "${SCRATCH:?SCRATCH must be set (compose mounts \$SCRATCH/st/{config,data,plugins,extensions})}"
+: "${SCRATCH:?SCRATCH must be set (the state directory is \$SCRATCH/st)}"
 # Everything lives on the ramdisk: chats too, so download the ones worth keeping (SillyTavern's "Manage chat files").
-export ST_DATA_DIR="${ST_DATA_DIR:-$SCRATCH/st/data}"
-temp_dirs=("$SCRATCH/st/config" "$SCRATCH/st/plugins" "$SCRATCH/st/extensions")
+export ST_ROOT="${ST_ROOT:-$SCRATCH/st}"
 
 compose() { docker compose -f "$script_dir/docker-compose.yml" "$@"; }
 
@@ -30,8 +29,8 @@ fi
 
 case "${1:-}" in "" | re) ;; *) echo "Usage: st.sh [re|logs]" >&2; exit 2 ;; esac
 
-# Missing bind-mount sources would be created root-owned by the Docker daemon.
-mkdir -p "$ST_DATA_DIR" "${temp_dirs[@]}"
+# A missing bind-mount source would be created root-owned by the Docker daemon (st-perms fixes only what is under it).
+mkdir -p "$ST_ROOT"
 
 case "${1:-}" in
   "") compose up -d
@@ -39,6 +38,6 @@ case "${1:-}" in
       docker start -a st-init
       # `docker restart` rather than `compose restart`, whose progress view stayed on "Restarting 0.4s" with the timer stopped although
       # the containers were fine (container_name = service).
-      docker restart $(compose config --services | grep -vx 'st-init') ;;
+      docker restart $(compose config --services | grep -vxe st-init -e st-perms) ;;
   re) compose up -d --force-recreate ;;
 esac

@@ -1,17 +1,24 @@
-# Start it with ./st.sh: it sets ST_DATA_DIR and makes the directories under $SCRATCH, which compose would otherwise create root-owned.
+# Start it with ./st.sh, which sets ST_ROOT (the state directory) from $SCRATCH. deploy_to_mc.sh runs it with a .env of its own
+# (ST_ROOT=./data, ST_RESTART, ST_LAN_CIDR), so the same file serves both hosts.
 
 name: st
 
-networks:
-  default:
-    name: localmesh
-    external: true
-
-# All state lives under $SCRATCH/st (ramdisk), chats included. ST_DATA_DIR is set by st.sh.
+# All state lives under $ST_ROOT/{config,data,plugins,extensions}; on the main host that is a ramdisk, chats included.
 services:
+  # Docker creates missing bind mount directories root-owned, which the node user (1000) cannot write to.
+  st-perms:
+    container_name: st-perms
+    image: ghcr.io/sillytavern/sillytavern:latest
+    user: "0:0"
+    entrypoint: ["sh", "-c", "cd /st_root && mkdir -p config data plugins extensions && chown 1000:1000 config data plugins extensions"]
+    volumes:
+      - "${ST_ROOT:?}:/st_root"
+    restart: "no"
+
   # SillyTavern's chat API is always http://gateway:8789/v1, which is this gateway: ./gateway.mjs in front of any OpenAI-compatible upstream.
-  # Address, key, model and request tweaks come from .gateway.env. The upstream is a container of its own (leyline, ...) on the network
-  # "localmesh", reached by its name, a program on the host (host.docker.internal), or a service on the internet; nothing here knows which.
+  # SillyTavern reaches it by the service name on this project's own network. Address, key, model and request tweaks come from
+  # .gateway.env. The upstream is a service on the internet, a container reached through a published port, or a program on the host
+  # (host.docker.internal); nothing here knows which.
   gateway:
     container_name: gateway
     image: node:22-alpine
@@ -24,6 +31,7 @@ services:
       - HOST=0.0.0.0
     volumes:
       - "./gateway.mjs:/app/gateway.mjs:ro"
+    # No authentication: whoever reaches this port uses the upstream.
     ports:
       - "0.0.0.0:8789:8789"
     healthcheck:
@@ -32,7 +40,7 @@ services:
       timeout: 3s
       retries: 5
     stop_grace_period: 20s
-    restart: "no"
+    restart: "${ST_RESTART:-no}"
 
   # One-shot: applies ./seed (settings.json merged in, QuickReplies copied over) before SillyTavern starts.
   st-init:
@@ -40,13 +48,16 @@ services:
     image: ghcr.io/sillytavern/sillytavern:latest
     user: "1000:1000"
     entrypoint: ["sh", "/init.sh"]
+    depends_on:
+      st-perms:
+        condition: service_completed_successfully
     volumes:
       - "./init.sh:/init.sh:ro"
       - "./merge-settings.mjs:/merge-settings.mjs:ro"
       - "./seed:/seed:ro"
-      - "${ST_DATA_DIR:-./data}:/home/node/app/data"
-      - "${SCRATCH:?}/st/plugins:/home/node/app/plugins"
-      - "${SCRATCH:?}/st/extensions:/home/node/app/public/scripts/extensions/third-party"
+      - "${ST_ROOT:?}/data:/home/node/app/data"
+      - "${ST_ROOT:?}/plugins:/home/node/app/plugins"
+      - "${ST_ROOT:?}/extensions:/home/node/app/public/scripts/extensions/third-party"
     restart: "no"
 
   sillytavern:
@@ -73,16 +84,16 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - "${SCRATCH:?}/st/config:/home/node/app/config"
-      - "${ST_DATA_DIR:-./data}:/home/node/app/data"
-      - "${SCRATCH:?}/st/plugins:/home/node/app/plugins"
-      - "${SCRATCH:?}/st/extensions:/home/node/app/public/scripts/extensions/third-party"
+      - "${ST_ROOT:?}/config:/home/node/app/config"
+      - "${ST_ROOT:?}/data:/home/node/app/data"
+      - "${ST_ROOT:?}/plugins:/home/node/app/plugins"
+      - "${ST_ROOT:?}/extensions:/home/node/app/public/scripts/extensions/third-party"
     healthcheck:
       test: ["CMD", "node", "src/healthcheck.js"]
       interval: 30s
       timeout: 10s
       start_period: 20s
       retries: 3
-    # Not at boot: the bind sources are on the ramdisk, empty then, and dockerd starts before any shell (st.sh) can mkdir them,
-    # so the daemon would create them root-owned. st.sh starts it.
-    restart: "no"
+    # On the main host not at boot: the bind sources are on the ramdisk, empty then, and st.sh recreates them first.
+    # deploy_to_mc.sh sets ST_RESTART=unless-stopped, where the state is on disk.
+    restart: "${ST_RESTART:-no}"
