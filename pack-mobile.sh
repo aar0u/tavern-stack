@@ -5,6 +5,10 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 out="${1:-${SCRATCH:?SCRATCH must be set, or give the output file}/st-mobile.tar.gz}"
+if [ ! -f "$script_dir/gateway.mobile.env" ]; then
+  echo "[ERROR] create gateway.mobile.env with UPSTREAM_URL and UPSTREAM_KEY for the phone's upstream; this file is ignored by Git" >&2
+  exit 1
+fi
 
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
@@ -13,12 +17,8 @@ mkdir -p "$pkg/seed"
 
 # 1. Copy runner and merge script from repo
 cp "$script_dir/merge-settings.mjs" "$pkg/"
-cp "$script_dir/gateway.mjs" "$pkg/" 2>/dev/null || true
-if [ -f "$script_dir/.gateway.env" ]; then
-  cp "$script_dir/.gateway.env" "$pkg/"
-elif [ -f "$script_dir/.gateway.env.example" ]; then
-  cp "$script_dir/.gateway.env.example" "$pkg/.gateway.env"
-fi
+cp "$script_dir/gateway.mjs" "$pkg/"
+cp "$script_dir/gateway.mobile.env" "$pkg/gateway.env"
 # 2. Copy seed (sd settings point at the PC)
 cp -r "$script_dir/seed/scripts" "$script_dir/seed/QuickReplies" "$script_dir/seed/avatars" "$pkg/seed/"
 python3 -I - "$script_dir/seed/settings.json" "$pkg/seed/settings.json" <<'EOF'
@@ -65,6 +65,7 @@ plugin_dir="$ST_DIR/plugins"
 for spec in \
   "$ext_dir=JS-Slash-Runner=https://github.com/N0VI028/JS-Slash-Runner.git" \
   "$ext_dir=ST-Prompt-Template=https://github.com/zonde306/ST-Prompt-Template.git" \
+  "$ext_dir=story-oracle=https://github.com/namelessone88/story-oracle.git" \
   "$plugin_dir=SillyTavern-EdgeTTS-Plugin=https://github.com/SillyTavern/SillyTavern-EdgeTTS-Plugin.git"; do
   dir="${spec%%=*}"
   rest="${spec#*=}"
@@ -85,13 +86,13 @@ if [ -f "$BASE_DIR/merge-settings.mjs" ] && [ -d "$BASE_DIR/seed" ]; then
   node "$BASE_DIR/merge-settings.mjs" "$BASE_DIR/seed" "$USER_DATA/settings.json" "$ST_DIR/default/content/settings.json"
 fi
 
-# Optional: start gateway in background if .gateway.env exists
-if [ -f "$BASE_DIR/gateway.mjs" ] && [ -f "$BASE_DIR/.gateway.env" ]; then
+# Optional: start gateway in background if gateway.env exists
+if [ -f "$BASE_DIR/gateway.mjs" ] && [ -f "$BASE_DIR/gateway.env" ]; then
   echo "Starting gateway on port 8789..."
   pkill -f "node.*gateway.mjs" || true
   (
     set -a
-    source "$BASE_DIR/.gateway.env"
+    source "$BASE_DIR/gateway.env"
     set +a
     nohup node "$BASE_DIR/gateway.mjs" > "$BASE_DIR/gateway.log" 2>&1 &
   )

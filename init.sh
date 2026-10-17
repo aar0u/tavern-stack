@@ -10,6 +10,7 @@ plugin_dir="${ST_PLUGIN_DIR:-/home/node/app/plugins}"
 for spec in \
   "$ext_dir=JS-Slash-Runner=https://github.com/N0VI028/JS-Slash-Runner.git" \
   "$ext_dir=ST-Prompt-Template=https://github.com/zonde306/ST-Prompt-Template.git" \
+  "$ext_dir=story-oracle=https://github.com/namelessone88/story-oracle.git" \
   "$plugin_dir=SillyTavern-EdgeTTS-Plugin=https://github.com/SillyTavern/SillyTavern-EdgeTTS-Plugin.git"; do
   dir="${spec%%=*}"
   rest="${spec#*=}"

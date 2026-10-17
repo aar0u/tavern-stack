@@ -1,1 +1,5 @@
 gemini-data/
+.env
+.gateway.env
+gateway.mobile.env
+.planning/
