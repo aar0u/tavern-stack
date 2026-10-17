@@ -5,9 +5,12 @@
     "user_avatar": "user-default.png",
     "oai_settings": {
         "chat_completion_source": "custom",
-        "custom_url": "http://gateway:8789/v1"
+        "custom_url": "http://gateway:8789/v1",
+        "custom_include_body": ""
     },
     "power_user": {
+        "chat_truncation": 5,
+        "chat_width": 60,
         "auto_connect": true,
         "default_persona": "user-default.png",
         "personas": {

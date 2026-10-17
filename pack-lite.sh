@@ -6,7 +6,7 @@
 # lose the image generation (sd) and say settings.story.pictures is false, so that the 更多 menu offers only the summary; plus
 # lite-README.txt (as README.txt), this directory's docker-compose.yml without the gateway service, and a .env with the state settings
 # of a machine that keeps its data on disk. The seed's chat URL becomes http://$LLM_HOST:8789/v1; LLM_HOST comes from this directory's
-# .env, default gateway.example (the deployed gateway on mc).
+# .env and must be configured explicitly.
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -21,7 +21,7 @@ cp "$script_dir/init.sh" "$script_dir/merge-settings.mjs" "$pkg/"
 cp -r "$script_dir/seed/scripts" "$script_dir/seed/QuickReplies" "$script_dir/seed/avatars" "$pkg/seed/"
 cp "$script_dir/lite-README.txt" "$pkg/README.txt"
 llm_host="$({ sed -n 's/^LLM_HOST=//p' "$script_dir/.env" 2>/dev/null || true; } | tail -n 1 | tr -d "'\"")"
-llm_host="${llm_host:-gateway.example}"
+: "${llm_host:?Set LLM_HOST in .env to the deployed gateway host}"
 printf 'ST_ROOT=./data\nST_RESTART=unless-stopped\n' > "$pkg/.env"
 python3 -I - "$script_dir/docker-compose.yml" "$pkg/docker-compose.yml" <<'EOF'
 import re, sys
@@ -39,7 +39,7 @@ EOF
 python3 -I - "$script_dir/seed/settings.json" "$pkg/seed/settings.json" "$llm_host" <<'EOF'
 import json, sys
 settings = json.load(open(sys.argv[1], encoding="utf8"))
-# extra_hosts takes only IPs, so a host name (the default is one) goes into the chat URL instead.
+# extra_hosts takes only IPs, so put the configured host directly in the chat URL.
 settings["oai_settings"]["custom_url"] = f"http://{sys.argv[3]}:8789/v1"
 del settings["extension_settings"]["sd"]
 settings["extension_settings"]["story"]["pictures"] = False

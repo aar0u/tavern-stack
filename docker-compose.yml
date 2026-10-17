@@ -16,15 +16,15 @@ services:
     restart: "no"
 
   # SillyTavern's chat API is always http://gateway:8789/v1, which is this gateway: ./gateway.mjs in front of any OpenAI-compatible upstream.
-  # SillyTavern reaches it by the service name on this project's own network. Address, key, model and request tweaks come from
-  # .gateway.env. The upstream is a service on the internet, a container reached through a published port, or a program on the host
+  # SillyTavern reaches it by the service name on this project's own network. Only the upstream address and key come from
+  # gateway.env. The upstream is a service on the internet, a container reached through a published port, or a program on the host
   # (host.docker.internal); nothing here knows which.
   gateway:
     container_name: gateway
     image: node:22-alpine
     user: "1000:1000"
     command: ["node", "/app/gateway.mjs"]
-    env_file: .gateway.env
+    env_file: gateway.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -34,11 +34,6 @@ services:
     # No authentication: whoever reaches this port uses the upstream.
     ports:
       - "0.0.0.0:8789:8789"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8789/health"]
-      interval: 3s
-      timeout: 3s
-      retries: 5
     stop_grace_period: 20s
     restart: "${ST_RESTART:-no}"
 
