@@ -108,10 +108,20 @@
       .sort((a, b) => letters(b.text) - letters(a.text));
   };
 
+  // Comments are dropped. A preset that opens the reasoning tag in its own prefill leaves a reply that starts inside the reasoning, with only
+  // the closing tag: it has no pair, so segmentsOf would count it as the text outside the tags, which can outweigh the story.
+  function cleanReply(mes) {
+    const text = mes.replace(/<!--[\s\S]*?-->/g, "");
+    for (const close of text.matchAll(/<\/([^\s<>/!]+)>/g)) {
+      if (isReasoning(close[1]) && !text.slice(0, close.index).includes(`<${close[1]}`)) return text.slice(close.index + close[0].length);
+    }
+    return text;
+  }
+
   // `narration` is for reading aloud: a block that is mostly one inner block (a <content> holding a <time>, a <location> and the <now_plot>)
   // is read as that inner block, so the date and the place are not read out before every reply. The model gets them, as context.
   function storyText(mes, { narration = false } = {}) {
-    const plain = mes.replace(/<!--[\s\S]*?-->/g, "");
+    const plain = cleanReply(mes);
     let best = segmentsOf(plain)[0];
     if (!best) return flat(plain);
     while (narration && best.name) {

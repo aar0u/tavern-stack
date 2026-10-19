@@ -116,6 +116,10 @@ export function createGateway({ upstream, key, retries = 2, sleep = wait, log = 
     } catch {
       return send(res, 400, { error: { message: "request body is not JSON" } });
     }
+    // custom_include_body is commonly prefilled with a reasoning_effort slot set to '' so it can be edited on a phone; '' or null
+    // means "not set" and must not reach the upstream, which rejects non-enum values. Valid slots ({reasoning: {enabled: ...}}) stay.
+    if (!payload.reasoning_effort) delete payload.reasoning_effort;
+    if (payload.reasoning && !payload.reasoning.effort) delete payload.reasoning.effort;
     const started = Date.now();
     const controller = new AbortController();
     res.on("close", () => controller.abort());
@@ -218,6 +222,10 @@ if (process.argv.includes("--self-test")) {
   assert.equal((await r.json()).choices[0].message.content, "ok");
   assert.equal(calls[0].custom.nested.length, 2, "request parameters pass through");
   assert.match(lines.at(-1), /^m 200 [\d.]+s effort=low in=12 out=3 finish=stop$/, "reasoning= is left out when the upstream does not report it");
+
+  r = await ask({ reasoning_effort: "", reasoning: { enabled: true, effort: "" } });
+  assert.equal(calls[0].reasoning_effort, undefined, "an empty reasoning_effort is the unset slot, not sent to the upstream");
+  assert.deepEqual(calls[0].reasoning, { enabled: true }, "a reasoning object keeps its valid members when effort is empty");
 
   r = await ask({}, 429, 503);
   assert.equal(r.status, 200);
