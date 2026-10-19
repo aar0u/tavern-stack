@@ -62,7 +62,7 @@ UPSTREAM_KEY=
 | `seed/QuickReplies/*.json` | 复制进快捷回复集；文件名就是集合名 |
 | `seed/avatars/*.png` | 复制进 `User Avatars/`；`user-default.png` 是 persona 齐野的头像 |
 
-`oai_settings.custom_include_body` 默认为空，ST 不加额外的请求参数。要给 cpa 指定推理档位，填 `"{\"reasoning_effort\":\"low\"}"`（对所有模型生效）；OpenRouter 关推理填 `"{\"reasoning\":{\"enabled\":false}}"`。
+`oai_settings.custom_include_body` 预填 `reasoning_effort: ''`（YAML，按 YAML 解析后合并）。空值等于"未设置"，gateway 会在转发前剥掉（`null` 同理），所以默认不发推理档位。要指定档位，手机上把 `''` 改成 `low`/`medium`/`high`（对所有模型生效，重启后回到 seed 的预填值）；OpenRouter 关推理填 `reasoning: {enabled: false}`。
 
 快捷回复 `quick-replies`：`代写`（id 2）、`更多`（id 3）、`全屏`（id 4）。脚本按 id 引用；改 id 要同步改 `page.js` 和 `story.js` 里的常量。
 
