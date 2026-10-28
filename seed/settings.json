@@ -5,8 +5,8 @@
     "user_avatar": "user-default.png",
     "oai_settings": {
         "chat_completion_source": "custom",
-        "custom_url": "http://gateway:8789/v1",
-        "custom_include_body": "reasoning_effort: ''"
+        "custom_url": "http://host.docker.internal:3425/v1",
+        "custom_include_body": ""
     },
     "power_user": {
         "chat_truncation": 5,
@@ -25,6 +25,16 @@
         "custom_css": "@media (min-width: 769px) {\n  .mes_text,\n  .mes_text * {\n    font-size: 18px !important;\n    line-height: 1.3 !important;\n  }\n}"
     },
     "extension_settings": {
+        "tavern_helper": {
+            "render": {
+                "depth": 5
+            }
+        },
+        "storyOracle": {
+            "endpoint": "http://host.docker.internal:3425/v1",
+            "model": "workbuddy-ai/deepseek-v4.1-flash",
+            "directViaBackend": true
+        },
         "story": {
             "pictures": true
         },

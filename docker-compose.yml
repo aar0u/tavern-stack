@@ -15,7 +15,7 @@ services:
       - "${ST_ROOT:?}:/st_root"
     restart: "no"
 
-  # SillyTavern's chat API is always http://gateway:8789/v1, which is this gateway: ./gateway.mjs in front of any OpenAI-compatible upstream.
+  # An OpenAI-compatible gateway at http://gateway:8789/v1: ./gateway.mjs in front of any upstream, with retries and fixes for Gemini.
   # SillyTavern reaches it by the service name on this project's own network. Only the upstream address and key come from
   # gateway.env. The upstream is a service on the internet, a container reached through a published port, or a program on the host
   # (host.docker.internal); nothing here knows which.
@@ -69,6 +69,9 @@ services:
       - FORCE_COLOR=1
       - SILLYTAVERN_HEARTBEATINTERVAL=30
       - SILLYTAVERN_ENABLESERVERPLUGINS=true   # for the Edge TTS plugin installed by st-init
+      # /proxy/<url> makes SillyTavern fetch <url> for the browser, which the card's pre-battle parsing needs to reach the LLM API.
+      # Anyone who reaches port 8000 can make the server fetch any address it can reach.
+      - SILLYTAVERN_ENABLECORSPROXY=true
       - PUID=1000
       - PGID=1000
       # 172.16.0.0/12 covers all Docker bridge networks; ST_LAN_CIDR is the LAN that may reach it (phone).

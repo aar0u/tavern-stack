@@ -1,7 +1,7 @@
 // @name 懒人快捷键
 // Helpers for the page itself, not for the chat model:
 //   u d , . scroll the chat up / down by 0.4 of a page (u and , up, d and . down) while no text field has the focus; / focuses the input box,
-//   Esc (SillyTavern's own) and Shift+/ leave it; Alt+/ runs the 代写 quick reply;
+//   Esc (SillyTavern's own) and Shift+. leave it; Alt+/ runs the 代写 quick reply;
 //   the 全屏 quick reply (its message is empty) toggles browser fullscreen;
 //   while a reply is being written, a pill above the stop button shows a pulsing dot, the elapsed time and the characters streamed so far
 //   (or how long nothing new has come, when it has stalled);
@@ -28,9 +28,10 @@ const onKey = (e) => {
   const plain = !e.altKey && !e.shiftKey && !isTyping(e.target);
   const scroll = plain && SCROLL[e.code];
   const focusInput = plain && e.code === "Slash";
-  // Shift+/ in the input box is the other way out of it besides Esc: the right hand can do it. The key is checked, not the code, so an input
-  // method composing a ？ (key "Process") is left alone, and only the chat input is, since other text fields need their ?
-  const leaveInput = e.shiftKey && !e.altKey && e.key === "?" && e.target?.id === "send_textarea";
+  // Shift+. in the input box is the other way out of it besides Esc: the right hand can do it. The key is checked, not the code, so an input
+  // method composing a 》 (key "Process") is left alone, and only the chat input is, since other text fields need their >. It costs the
+  // chat input a typed > (quotes, tags): use Shift+. only when that is not wanted there.
+  const leaveInput = e.shiftKey && !e.altKey && e.key === ">" && e.target?.id === "send_textarea";
   if (!quickReply && !scroll && !focusInput && !leaveInput) return;
   e.preventDefault();
   if (e.repeat) return;
