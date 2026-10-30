@@ -226,12 +226,17 @@ function drawPanel() {
             ),
         group("其他", button("总结", actions.sum), button("全屏", toggleFullscreen), button("设置", openSettings)),
     );
-    // Always the same place, whatever the button is: the right edge, just above the input bar. (By left and top, not bottom and right:
-    // SillyTavern's style.css puts a transform on <html>, which makes it the containing block of fixed elements.)
-    const bar = document.getElementById("send_form")?.offsetHeight ?? 0;
+    // Next to the ball, so it follows where the ball was put: right edges aligned, above the ball in the lower half of the screen and
+    // below it in the upper half. The ball does not move while the panel is open, so the panel stays put. (By left and top, not bottom
+    // and right: SillyTavern's style.css puts a transform on <html>, which makes it the containing block of fixed elements.)
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    const below = ball.offsetTop + BALL / 2 < window.innerHeight / 2;
+    const left = ball.offsetLeft + BALL - width;
+    const top = below ? ball.offsetTop + BALL + 8 : ball.offsetTop - height - 8;
     Object.assign(panel.style, {
-        left: `${Math.max(8, window.innerWidth - panel.offsetWidth - 8)}px`,
-        top: `${Math.max(8, window.innerHeight - bar - panel.offsetHeight - 12)}px`,
+        left: `${clamp(left, 8, window.innerWidth - width - 8)}px`,
+        top: `${clamp(top, 8, window.innerHeight - height - 8)}px`,
     });
 }
 

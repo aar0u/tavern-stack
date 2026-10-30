@@ -1,3 +1,9 @@
+/* The theme's blur tint is dark on a dark theme and disappears into the page, so the surface is the tint lifted toward the text color, with an edge. */
+#ts-ball, #ts-panel {
+    --ts-surface: color-mix(in srgb, var(--SmartThemeBodyColor) 16%, var(--SmartThemeBlurTintColor));
+    --ts-edge: color-mix(in srgb, var(--SmartThemeBodyColor) 45%, transparent);
+}
+
 #ts-ball {
     position: fixed;
     z-index: 2900;
@@ -11,11 +17,11 @@
     cursor: pointer;
     user-select: none;
     touch-action: none;
-    opacity: 0.85;
+    opacity: 0.95;
     color: var(--SmartThemeBodyColor);
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    background: var(--ts-surface);
+    border: 1px solid var(--ts-edge);
+    box-shadow: 0 0 0 1px var(--ts-edge), 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 #ts-ball[hidden] { display: none; }
 #ts-ball:hover { opacity: 1; }
@@ -30,9 +36,9 @@
     padding: 10px 12px;
     border-radius: 10px;
     color: var(--SmartThemeBodyColor);
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    background: var(--ts-surface);
+    border: 1px solid var(--ts-edge);
+    box-shadow: 0 0 0 1px var(--ts-edge), 0 4px 16px rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 8px));
 }
 #ts-panel .ts-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
