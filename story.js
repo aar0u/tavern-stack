@@ -1,8 +1,8 @@
 // What reads the story and asks the chat model through a clean request (no roleplay preset), called by the buttons of the extension
 // (actions.js), not by commands:
 //   pic     writes a Stable Diffusion prompt (STYLE below) into the input box as a ready /sd command, to edit and send;
-//   imp     writes the player's next line or action into the input box;
-//   choices writes four different next steps for the player, for the card under the latest reply;
+//   choices writes four different next steps for the player (or four ways to write out the draft in the input box), for the card under
+//           the latest reply;
 //   sum     summarizes the whole chat into a window, to copy into the Author's Note or a world book entry.
 // It needs no page: every dependency (context, generateRaw, toastr, the input box, the window) is given to the create functions.
 export const story = (() => {
@@ -194,14 +194,10 @@ export const story = (() => {
     ];
   }
 
-  // The roleplay preset made this request copy older player lines (4 of 4 replays): its own rules say to reproduce <user_input>,
-  // which holds the previous player turn, and the instruction was 127 characters at the end of 129K.
-  const impTask = (player) =>
-    `写最新剧情之后接下来发生的1到3句，不超过80字（英文不超过50词）。语言、人称、时态、文风和台词格式都与玩家自己的发言一致（第一条消息也算，除非它是角色档案），还没有发言就与剧情一致。可以是台词、动作或纯叙述，也可以是其他角色的行动。输出里不要带任何标签。必须直接接在最新剧情的结尾之后，不要重复已发生的内容。如果给了草稿，就按草稿的意思扩写成成品，草稿写谁就写谁；没有草稿则写${player}接下来的台词或动作。`;
-
-  // The limits in impTask alone were ignored by a small model (replies of several paragraphs, first person); repeated last they hold.
-  const impReminder = (player, hasDraft) =>
-    `${hasDraft ? "请按草稿写接下来发生的内容" : `请写${player}接下来的台词或动作`}：只写一段，最多3句话，不超过80字（英文不超过50词），人称和文风与玩家发言一致，不要续写成一整幕。`;
+  // The player's own lines mix persons (125 third and 37 first of 162 in one chat), so they cannot decide the person; the story text is
+  // written in one person and says which.
+  const personRule = (player) =>
+    `人称以最新剧情称呼玩家的方式为准：剧情里写“${player}”这个名字就用第三人称并以${player}作主语，写“你”就用第二人称，写“我”才用第一人称，不要默认用“我”。语言和时态与剧情一致，文风和台词格式参考玩家自己的发言（第一条消息也算，除非它是角色档案）。`;
 
   // The first player message is a character sheet in some chats and the first action in others, so it is labelled as neither. The
   // player's later messages come after the story: the story replies alone never say what the player did last.
@@ -212,14 +208,6 @@ export const story = (() => {
     material.recent.length > 0 && `What the player recently said or did (oldest first; already told in the story, do not repeat it):\n${material.recent.join("\n---\n")}`,
   ];
 
-  function buildImpRequest(material, draft) {
-    const sections = [...impContext(material), draft && `草稿：${draft}`, impReminder(material.player, Boolean(draft))];
-    return [
-      { role: "system", content: impTask(material.player) },
-      { role: "user", content: sections.filter(Boolean).join("\n\n") },
-    ];
-  }
-
   const stripReply = (reply) => reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```[a-z]*/gi, "");
 
   // The model's text for the input box, as it wrote it: line breaks, spaces, '|' and '{{' stay, since it is put into the box directly and
@@ -227,14 +215,24 @@ export const story = (() => {
   const impText = (reply) => stripReply(reply).replace(/\r\n?/g, "\n").trim();
 
   // choices: four different next steps for the player, one per line, for the card under the latest reply. Nothing is put into the input
-  // box here; the lines are what the function returns.
-  const impChoicesTask = (player) =>
-    `根据最新剧情，写${player}接下来可以做的4种不同选择，每条一行，每条是一个动作或一句台词（1到2句，不超过60字，英文不超过40词）。四条的做法和语气要明显不同，例如主动出手、试探询问、退让回避、强硬施压。语言、人称、时态、文风和台词格式都与玩家自己的发言一致（第一条消息也算，除非它是角色档案），还没有发言就与剧情一致。必须直接接在最新剧情的结尾之后，不要重复已发生的内容。只写这4行，不加序号、标题、解释或标签。`;
+  // box here; the lines are what the function returns. With a draft (what is typed in the box) they are four different ways to write it out.
+  const impChoicesTask = (player, hasDraft) =>
+    `${
+      hasDraft
+        ? `根据最新剧情，把草稿按4种不同的写法扩写成成品，每条一行，每条1到2句，不超过60字（英文不超过40词）。四条的措辞和语气要明显不同，但都保持草稿的意思，草稿写谁就写谁。`
+        : `根据最新剧情，写${player}接下来可以做的4种不同选择，每条一行，每条是一个动作或一句台词（1到2句，不超过60字，英文不超过40词）。四条的做法和语气要明显不同，例如主动出手、试探询问、退让回避、强硬施压。`
+    }${personRule(player)}必须直接接在最新剧情的结尾之后，不要重复已发生的内容。只写这4行，不加序号、标题、解释或标签。`;
 
-  function buildImpChoicesRequest(material) {
-    const sections = [...impContext(material), `请写${material.player}接下来的4种不同选择，每条一行，每条不超过60字，做法和语气各不相同。`];
+  // The limits are said again last: the roleplay preset made an earlier request copy older player lines, and a small model ignored limits
+  // that were only in the system message.
+  function buildImpChoicesRequest(material, draft = "") {
+    const sections = [
+      ...impContext(material),
+      draft && `草稿：${draft}`,
+      `${draft ? "请按草稿写" : `请写${material.player}接下来的`}4种不同的${draft ? "成品" : "选择"}，每条一行，每条不超过60字，${draft ? "措辞" : "做法"}和语气各不相同，不要默认用“我”。`,
+    ];
     return [
-      { role: "system", content: impChoicesTask(material.player) },
+      { role: "system", content: impChoicesTask(material.player, Boolean(draft)) },
       { role: "user", content: sections.filter(Boolean).join("\n\n") },
     ];
   }
@@ -248,10 +246,10 @@ export const story = (() => {
       .slice(0, 6);
 
   function createImpChoices({ context, generateRaw }) {
-    return async function suggest() {
+    return async function suggest(draft = "") {
       const material = gather(context(), CONFIG.impMessages);
       if (!material.story) throw new Error("聊天里还没有剧情可接");
-      const reply = String(await generateRaw({ ordered_prompts: buildImpChoicesRequest(material), should_silence: true }));
+      const reply = String(await generateRaw({ ordered_prompts: buildImpChoicesRequest(material, draft.trim()), should_silence: true }));
       const choices = impChoices(reply);
       if (choices.length === 0) throw new Error(`模型没有返回内容: ${reply.slice(0, 80)}`);
       return choices;
@@ -379,32 +377,6 @@ export const story = (() => {
     };
   }
 
-  // setInput only fills the box; after a mouse click on the button the focus is elsewhere, so Enter would not send: focusInput moves it.
-  // Asked again while the box still holds the previous result (unedited), it is no draft: the original draft is used again, a reroll.
-  function createImp({ context, generateRaw, toastr, setInput, focusInput = () => {} }) {
-    let last = null;
-    return async function imp(input) {
-      const draft = last && input.trim() === last.text ? last.draft : input.trim();
-      const material = gather(context(), CONFIG.impMessages);
-      if (!material.story) {
-        toastr.warning("聊天里还没有剧情可接");
-        return;
-      }
-      try {
-        toastr.info("正在写下一步…");
-        const reply = String(await generateRaw({ ordered_prompts: buildImpRequest(material, draft), should_silence: true }));
-        const text = impText(reply);
-        if (!text) throw new Error(`模型没有返回内容: ${reply.slice(0, 80)}`);
-        await setInput(text);
-        last = { draft, text };
-        focusInput();
-      } catch (error) {
-        console.error("[imp]", error);
-        toastr.error(`代写失败: ${error?.message ?? error}`);
-      }
-    };
-  }
-
   // A summary needs what the player did as much as the replies, so this is the whole chat in order, the newest part when it is too long.
   function transcript(context) {
     const parts = [];
@@ -474,5 +446,5 @@ export const story = (() => {
     }
   }
 
-  return { CONFIG, STYLE, NSFW_BASE, SUM_TEXT_ID, storyText, installTts, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, buildImpChoicesRequest, impText, impChoices, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createImpChoices, createSum };
+  return { CONFIG, STYLE, NSFW_BASE, SUM_TEXT_ID, storyText, installTts, gather, transcript, sumPopupHtml, buildRequest, buildImpChoicesRequest, impText, impChoices, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImpChoices, createSum };
 })();

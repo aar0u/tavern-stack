@@ -12,8 +12,8 @@
 // and they keep animating after being scrolled out of view (about 100 running animations measured, one core busy, gone when the tab was
 // hidden), so message frames are watched for visibility. Frames are re-created on every render, hence the observer.
 const doc = window.parent.document;
-// The extension puts tavernStack on the page; its imp() has nothing to return when the extension is not loaded.
-const ALT_ACTIONS = { Slash: () => window.parent.tavernStack?.imp() };
+// The extension puts tavernStack on the page; its suggest() has nothing to return when the extension is not loaded.
+const ALT_ACTIONS = { Slash: () => window.parent.tavernStack?.suggest() };
 const SCROLL = { Comma: -1, Period: 1, KeyU: -1, KeyD: 1 };
 const isTyping = (el) => !!el?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])");
 const onKey = (e) => {

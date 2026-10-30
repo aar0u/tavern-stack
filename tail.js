@@ -1,12 +1,13 @@
 // The 代写 card under the latest reply, in the flow of the chat: a button asks for four different next steps; a click on one puts it into
-// the input box. It never sends, and never writes over what is typed. 写一句 is the single next step of imp, from the draft in the box.
+// the input box. It never sends, and never writes over what is typed. Text
+// already in the box is the draft: the four are then ways to write it out.
 import { fill, h } from "./dom.js";
 import { insertText, showsFor, suggestionKey } from "./suggest.js";
 
 const ID = "ts-tail";
 
-// suggest() gives the four choices (and throws a reason when it cannot); write() puts one next step into the input box.
-export function mountTail({ context, enabled, suggest, write }) {
+// suggest() gives the four choices (and throws a reason when it cannot).
+export function mountTail({ context, enabled, suggest }) {
     const state = { key: null, status: "idle", choices: [], error: "" };
     let card = null;
     let scheduled = false;
@@ -32,7 +33,6 @@ export function mountTail({ context, enabled, suggest, write }) {
                 h("b", {}, "代写"),
                 h("button", { class: "menu_button", disabled: busy ? "" : null, onclick: generate }, busy ? "生成中…" : state.status === "done" ? "重新生成" : "生成候选"),
                 state.status === "done" && h("button", { class: "menu_button", onclick: () => put(state.choices.join("\n")) }, "填入整段"),
-                h("button", { class: "menu_button", onclick: write }, "写一句"),
             ),
             state.status === "error" && h("div", { class: "ts-tail-error" }, state.error),
             state.status === "done" && state.choices.map((text) => h("button", { class: "menu_button ts-choice", onclick: () => put(text) }, text)),
@@ -65,6 +65,8 @@ export function mountTail({ context, enabled, suggest, write }) {
 
     async function generate() {
         if (state.status === "busy") return;
+        // Without a card (switched off, or the player's own message is last) the answer would have nowhere to show.
+        if (!enabled() || !sync()) return window.toastr?.info("代写卡没有显示（设置里关了，或最新一条是你自己的消息），没有可接的剧情");
         const key = state.key;
         Object.assign(state, { status: "busy", choices: [], error: "" });
         draw();

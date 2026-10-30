@@ -45,15 +45,14 @@ export function createActions({ context }) {
     };
 
     const pic = story.createPic({ ...deps, setInput, focusInput });
-    const imp = story.createImp({ ...deps, setInput, focusInput });
+    const suggest = story.createImpChoices(deps);
     const sum = story.createSum({ ...deps, show });
     return {
         // The seed's settings.story.pictures is false where there is nothing to draw with.
         pictures: () => context().extensionSettings?.story?.pictures !== false,
-        // The box is the draft of imp (empty: the player's next step), and what pic draws when it is not one of the kinds.
-        imp: () => imp(inputBox()?.value ?? ""),
+        // The box is what pic draws when it is not one of the kinds, and the draft the choices write out (empty: the player's next step).
         pic: (kind) => pic(kind ?? inputBox()?.value ?? ""),
-        suggest: story.createImpChoices(deps),
+        suggest: () => suggest(inputBox()?.value ?? ""),
         sum,
         // The Edge TTS provider reads the story, not the whole reply.
         installTts: () => story.installTts((path) => import(path)),

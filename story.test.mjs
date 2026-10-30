@@ -41,21 +41,23 @@ test("choices are asked from the story, and fail with a reason when there is non
     await assert.rejects(story.createImpChoices({ context: contextOf(chatOf([false, "夜里。"])), generateRaw: async () => " \n" })(), /没有返回内容/);
 });
 
-test("imp writes into the box; asked again over its own result it is a reroll of the first draft", async () => {
-    const box = { value: "" };
-    const drafts = [];
-    const replies = ["第一版", "第二版"];
-    const imp = story.createImp({
-        context: contextOf(chatOf([true, "我是齐野"], [false, "夜里，驿馆里很静，灯火压得很低。"])),
-        generateRaw: async ({ ordered_prompts }) => (drafts.push(ordered_prompts[1].content.includes("草稿：先问他")), replies.shift()),
-        toastr,
-        setInput: (text) => (box.value = text),
-    });
-    await imp("先问他");
-    assert.equal(box.value, "第一版");
-    await imp(box.value);
-    assert.equal(box.value, "第二版");
-    assert.deepEqual(drafts, [true, true], "the second time the original draft is used, not the first result");
+test("the person follows how the story names the player, not the player's own mixed lines", () => {
+    const material = story.gather(contextOf(chatOf([true, "我是齐野"], [false, "齐野推开门。"], [true, "我拔刀"]))());
+    for (const request of [story.buildImpChoicesRequest(material), story.buildImpChoicesRequest(material, "先问他")]) {
+        assert.match(request[0].content, /以最新剧情称呼玩家的方式为准/);
+        assert.match(request[0].content, /以齐野作主语/);
+        assert.match(request[0].content, /不要默认用“我”/);
+    }
+});
+
+test("a draft in the box makes the choices four ways to write it out", async () => {
+    const asked = [];
+    const suggest = story.createImpChoices({ context: contextOf(chatOf([true, "我是齐野"], [false, "夜里，驿馆里很静。"])), generateRaw: async ({ ordered_prompts }) => (asked.push(ordered_prompts), "甲\n乙\n丙\n丁") });
+    await suggest("  先问他  ");
+    assert.match(asked[0][0].content, /扩写成成品/);
+    assert.match(asked[0][1].content, /草稿：先问他\n/);
+    await suggest("");
+    assert.doesNotMatch(asked[1][1].content, /草稿/);
 });
 
 test("pic puts a ready /sd command into the box, with explicit tags only when the latest reply has the terms", async () => {

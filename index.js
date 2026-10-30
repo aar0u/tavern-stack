@@ -174,10 +174,8 @@ function openPanel() {
     drawPanel();
 }
 
-// The choices are written into the card under the latest reply, so the chat is scrolled there. With the card switched off the panel asks
-// for the single next step instead.
+// The choices are written into the card under the latest reply, so the chat is scrolled there.
 function suggestHere() {
-    if (!settings().tail.show || !tail) return actions.imp();
     const chat = document.getElementById("chat");
     chat?.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
     return tail.generate();
@@ -214,7 +212,7 @@ function drawPanel() {
         profiles.length
             ? profiles.map((profile) => h("div", { class: "ts-group" }, h("div", { class: "ts-title" }, profile.name), profile.prompts.map((prompt) => h("label", { class: "ts-check" }, h("input", { type: "checkbox", checked: prompt.enabled, onchange: (e) => ((prompt.enabled = e.target.checked), commit()) }), h("span", {}, prompt.label)))))
             : h("div", { class: "ts-meta" }, "这个角色没有匹配的规则"),
-        group("写", button("代写候选", suggestHere), button("写一句", actions.imp)),
+        group("写", button("代写候选", suggestHere)),
         actions.pictures() &&
             group(
                 "画（标签放进输入框，改完回车出图）",
@@ -245,8 +243,8 @@ function init() {
     actions = createActions({ context });
     actions.installTts();
     // For the scripts of the page (Alt+/ in page.js), which are not modules of the extension.
-    window.tavernStack = { imp: actions.imp };
-    tail = mountTail({ context, enabled: () => settings().tail.show, suggest: actions.suggest, write: actions.imp });
+    window.tavernStack = { suggest: suggestHere };
+    tail = mountTail({ context, enabled: () => settings().tail.show, suggest: actions.suggest });
     placeBall();
     apply();
     const { eventSource, eventTypes } = context();
