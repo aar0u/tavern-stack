@@ -40,8 +40,8 @@
 #ts-panel .ts-meta { font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
 #ts-panel .ts-group { margin: 6px 0; }
 #ts-panel .ts-title { font-size: 12px; opacity: 0.75; }
-#ts-panel .ts-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-#ts-panel .ts-action { flex: 1 1 auto; width: auto; white-space: nowrap; margin: 0; }
+#ts-panel .ts-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+#ts-panel .ts-action { width: auto; min-width: 0; padding-inline: 4px; white-space: nowrap; margin: 0; text-align: center; justify-content: center; }
 
 .ts-check { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .ts-settings .ts-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
@@ -50,3 +50,20 @@
 .ts-settings .ts-depth { width: 4em; }
 /* SillyTavern's .menu_button is as narrow as its content can break, so a label ended up one character per line. */
 .ts-settings .menu_button { width: auto; min-width: max-content; white-space: nowrap; flex: 0 0 auto; margin: 0; }
+
+/* The 代写 card, in the flow of the chat under the latest reply. */
+#ts-tail {
+    box-sizing: border-box;
+    margin: 6px auto 10px;
+    width: min(100%, 60em);
+    padding: 8px 12px;
+    border-radius: 10px;
+    color: var(--SmartThemeBodyColor);
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+#ts-tail .ts-tail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#ts-tail .menu_button { width: auto; min-width: max-content; white-space: nowrap; flex: 0 0 auto; margin: 0; }
+#ts-tail .menu_button[disabled] { opacity: 0.5; pointer-events: none; }
+#ts-tail .ts-choice { display: block; width: 100%; min-width: 0; margin: 6px 0 0; text-align: left; white-space: normal; }
+#ts-tail .ts-tail-error { margin-top: 6px; font-size: 12px; color: var(--SmartThemeQuoteColor, orange); }

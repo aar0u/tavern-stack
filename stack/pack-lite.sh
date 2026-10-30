@@ -3,7 +3,7 @@
 #                      this directory's own files, as OUT (default $SCRATCH/st-lite.tar.gz)
 #
 # Nothing in it is kept as a second copy: init.sh, merge-settings.mjs and the seed are the ones used here, except that the seed's settings
-# lose the image generation (sd) and say settings.story.pictures is false, so that the 更多 menu offers only the summary; plus
+# lose the image generation (sd) and say settings.story.pictures is false, so that the panel of the extension offers no drawing buttons, only the summary; plus
 # lite-README.txt (as README.txt), this directory's docker-compose.yml without the gateway service, and a .env with the state settings
 # of a machine that keeps its data on disk. The seed's chat URL becomes http://$LLM_HOST:8789/v1; LLM_HOST comes from this directory's
 # .env and must be configured explicitly.

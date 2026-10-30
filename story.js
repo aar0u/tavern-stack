@@ -1,9 +1,11 @@
-// @name 剧情命令 /pic /imp
-// Commands that read the story and ask the chat model through a clean request (no roleplay preset):
-//   /pic  writes a Stable Diffusion prompt (STYLE below) into the input box as a ready /sd command, to edit and send;
-//   /imp  writes the player's next line or action into the input box;
-//   /sum  summarizes the whole chat into a window, to copy into the Author's Note or a world book entry.
-(() => {
+// What reads the story and asks the chat model through a clean request (no roleplay preset), called by the buttons of the extension
+// (actions.js), not by commands:
+//   pic     writes a Stable Diffusion prompt (STYLE below) into the input box as a ready /sd command, to edit and send;
+//   imp     writes the player's next line or action into the input box;
+//   choices writes four different next steps for the player, for the card under the latest reply;
+//   sum     summarizes the whole chat into a window, to copy into the Author's Note or a world book entry.
+// It needs no page: every dependency (context, generateRaw, toastr, the input box, the window) is given to the create functions.
+export const story = (() => {
   const CONFIG = {
     storyMessages: 12,
     impMessages: 3,
@@ -203,15 +205,15 @@
 
   // The first player message is a character sheet in some chats and the first action in others, so it is labelled as neither. The
   // player's later messages come after the story: the story replies alone never say what the player did last.
+  const impContext = (material) => [
+    material.persona && `Player description:\n${material.persona}`,
+    material.intro && `The player's first message:\n${material.intro}`,
+    material.story && `Story text:\n${material.story}`,
+    material.recent.length > 0 && `What the player recently said or did (oldest first; already told in the story, do not repeat it):\n${material.recent.join("\n---\n")}`,
+  ];
+
   function buildImpRequest(material, draft) {
-    const sections = [
-      material.persona && `Player description:\n${material.persona}`,
-      material.intro && `The player's first message:\n${material.intro}`,
-      material.story && `Story text:\n${material.story}`,
-      material.recent.length > 0 && `What the player recently said or did (oldest first; already told in the story, do not repeat it):\n${material.recent.join("\n---\n")}`,
-      draft && `草稿：${draft}`,
-      impReminder(material.player, Boolean(draft)),
-    ];
+    const sections = [...impContext(material), draft && `草稿：${draft}`, impReminder(material.player, Boolean(draft))];
     return [
       { role: "system", content: impTask(material.player) },
       { role: "user", content: sections.filter(Boolean).join("\n\n") },
@@ -223,6 +225,38 @@
   // The model's text for the input box, as it wrote it: line breaks, spaces, '|' and '{{' stay, since it is put into the box directly and
   // does not pass the slash parser. Only what is no part of the text is removed (thinking, code fences, the blank ends).
   const impText = (reply) => stripReply(reply).replace(/\r\n?/g, "\n").trim();
+
+  // choices: four different next steps for the player, one per line, for the card under the latest reply. Nothing is put into the input
+  // box here; the lines are what the function returns.
+  const impChoicesTask = (player) =>
+    `根据最新剧情，写${player}接下来可以做的4种不同选择，每条一行，每条是一个动作或一句台词（1到2句，不超过60字，英文不超过40词）。四条的做法和语气要明显不同，例如主动出手、试探询问、退让回避、强硬施压。语言、人称、时态、文风和台词格式都与玩家自己的发言一致（第一条消息也算，除非它是角色档案），还没有发言就与剧情一致。必须直接接在最新剧情的结尾之后，不要重复已发生的内容。只写这4行，不加序号、标题、解释或标签。`;
+
+  function buildImpChoicesRequest(material) {
+    const sections = [...impContext(material), `请写${material.player}接下来的4种不同选择，每条一行，每条不超过60字，做法和语气各不相同。`];
+    return [
+      { role: "system", content: impChoicesTask(material.player) },
+      { role: "user", content: sections.filter(Boolean).join("\n\n") },
+    ];
+  }
+
+  // One choice per line; a list number or bullet in front is not part of it.
+  const impChoices = (reply) =>
+    impText(reply)
+      .split("\n")
+      .map((line) => line.trim().replace(/^(?:[-*•]|\d+[.、)）])\s*/, ""))
+      .filter(Boolean)
+      .slice(0, 6);
+
+  function createImpChoices({ context, generateRaw }) {
+    return async function suggest() {
+      const material = gather(context(), CONFIG.impMessages);
+      if (!material.story) throw new Error("聊天里还没有剧情可接");
+      const reply = String(await generateRaw({ ordered_prompts: buildImpChoicesRequest(material), should_silence: true }));
+      const choices = impChoices(reply);
+      if (choices.length === 0) throw new Error(`模型没有返回内容: ${reply.slice(0, 80)}`);
+      return choices;
+    };
+  }
 
   // The canvas is fixed for single-subject kinds (the model picked a wide one for a lone character in 5 of 8 runs; on SD1.5 that drew twins);
   // for last/free the model's first line decides. Only what the slash parser acts on ('|' and '{{') is removed from the prompt.
@@ -251,7 +285,7 @@
     return { canvas: FIXED_CANVAS[kind] ?? given ?? "landscape", prompt };
   }
 
-  // Without a reasoning channel a small model sometimes writes its analysis instead of tags (about 1 in 5 for /pic you, 2824 characters
+  // Without a reasoning channel a small model sometimes writes its analysis instead of tags (about 1 in 5 for the NPC picture, 2824 characters
   // of 'Let me analyze…' went to the phone once). Tags are short; prose is not.
   const isTagLine = (line) => {
     const cleaned = line.trim().replace(/[.;]+$/, "");
@@ -281,9 +315,9 @@
 
   // Asks the model for tags; null (after a toast) when there is nothing to draw or the model failed.
   function createCompose({ context, generateRaw, toastr }) {
-    return async function compose(input, usage) {
+    return async function compose(input) {
       if (!input.trim()) {
-        toastr.info(`${usage} me | you | face | bg | last | pov | <名字、描述或场景>`);
+        toastr.info("输入框是空的：写上要画的名字、描述或场景（me、you、face、bg、last、pov 也行）");
         return null;
       }
       const { kind, subject, forceNsfw } = parseInput(input);
@@ -335,7 +369,7 @@
   function createPic({ setInput, focusInput = () => {}, toastr, ...deps }) {
     const compose = createCompose({ toastr, ...deps });
     return async function pic(input) {
-      const result = await compose(input, "/pic");
+      const result = await compose(input);
       if (!result) return;
       const [width, height] = CONFIG[result.canvas];
       console.info("[pic]", result.kind, `${width}x${height}`, result.why ?? "-", result.prompt);
@@ -389,7 +423,7 @@
     "Sections, with their headings translated into that language: timeline (with times and places), how relationships progressed, foreshadowing that has been revealed, unresolved conflicts and suspense, the player's current situation. " +
     "If the first Player message is a character sheet, take it as background, not as something that happened. No tags or code blocks.";
 
-  // Shown above the text box of the /sum window. The Author's Note belongs to the chat it is written in and is sent with every request,
+  // Shown above the text box of the summary window. The Author's Note belongs to the chat it is written in and is sent with every request,
   // wherever the preset puts its own prompts, so it is the least invasive place; a world book entry would be a second option.
   const SUM_GUIDE =
     '<div style="text-align:left"><b>长期记忆</b>：点下面的“复制”，然后放进这个聊天的作者注释：' +
@@ -424,88 +458,15 @@
     };
   }
 
-  // A small menu above the quick reply button that opened it, in the theme's own colours. Resolves with the index of the chosen item, or
-  // null when the user clicks anywhere else or presses Escape.
-  function chooseFromMenu(page, anchor, texts) {
-    return new Promise((resolve) => {
-      const menu = page.createElement("div");
-      Object.assign(menu.style, {
-        position: "fixed",
-        zIndex: "9999",
-        padding: "6px",
-        borderRadius: "10px",
-        background: "var(--SmartThemeBlurTintColor)",
-        color: "var(--SmartThemeBodyColor)",
-        border: "1px solid var(--SmartThemeBorderColor)",
-        boxShadow: "0 4px 16px var(--SmartThemeShadowColor)",
-      });
-      const outside = (event) => {
-        if (!menu.contains(event.target)) close(null);
-      };
-      const escape = (event) => {
-        if (event.key === "Escape") close(null);
-      };
-      const close = (index) => {
-        page.removeEventListener("pointerdown", outside, true);
-        page.removeEventListener("keydown", escape, true);
-        menu.remove();
-        resolve(index);
-      };
-      texts.forEach((text, index) => {
-        const item = page.createElement("div");
-        item.textContent = text;
-        Object.assign(item.style, { padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap", borderRadius: "6px" });
-        item.addEventListener("pointerenter", () => (item.style.background = "rgba(128,128,128,0.25)"));
-        item.addEventListener("pointerleave", () => (item.style.background = ""));
-        item.addEventListener("click", () => close(index));
-        menu.append(item);
-      });
-      page.body.append(menu);
-      const view = page.defaultView;
-      const box = anchor?.getBoundingClientRect();
-      // By left/top and a translate, not by bottom: SillyTavern's style.css puts a transform on <html>, which makes <html> the containing
-      // block of fixed elements, and on the phone bottom/right then landed off screen (see page.js).
-      menu.style.left = `${Math.max(8, Math.min(box?.left ?? 8, view.innerWidth - menu.getBoundingClientRect().width - 8))}px`;
-      menu.style.top = `${(box?.top ?? view.innerHeight / 2) - 6}px`;
-      menu.style.transform = "translateY(-100%)";
-      page.addEventListener("pointerdown", outside, true);
-      page.addEventListener("keydown", escape, true);
-    });
-  }
-
-  // One quick reply for everything not used every turn: a menu of choices, each running a command.
-  function createMore({ items, choose }) {
-    return async function more() {
-      const index = await choose(items.map((item) => item.text));
-      if (index !== null && items[index]) await items[index].run();
-    };
-  }
-
-  // What the 更多 menu offers. The picture items are left out where there is nothing to draw with: the seed's settings.story.pictures is false.
-  const moreItems = ({ pictures, pic, sum, inputText }) => [
-    ...(pictures
-      ? [
-          { text: "画此刻", run: () => pic("last") },
-          { text: "画第一人称(POV)", run: () => pic("pov") },
-          { text: "画我", run: () => pic("me") },
-          { text: "画NPC", run: () => pic("you") },
-          { text: "画特写", run: () => pic("face") },
-          { text: "画景", run: () => pic("bg") },
-          { text: "画输入框里的…", run: () => pic(inputText()) },
-        ]
-      : []),
-    { text: "总结", run: () => sum() },
-  ];
-
   // SillyTavern's TTS cleans a message with one regex, which can only delete, so it cannot pick the story out of a reply. The provider's
-  // processText runs after that regex, on text that still has its tags: there the story is picked the way /pic picks it. It is reached through
-  // the page's own module instance (a script frame has a module map of its own, and a patch there would never be seen by the TTS extension).
+  // processText runs after that regex, on text that still has its tags: there the story is picked the way pic picks it. `load` imports a
+  // module of the page by its path (the extension runs in the page, so the module is the one the TTS extension uses).
   // Only the Edge provider. With another one, or if SillyTavern changes this, nothing is patched and the regex alone cleans the text.
   const TTS_PROVIDERS = [["/scripts/extensions/tts/edge.js", "EdgeTtsProvider"]];
-  async function installTts(host) {
+  async function installTts(load) {
     for (const [path, name] of TTS_PROVIDERS) {
       try {
-        const loaded = await host.Function(`return import(${JSON.stringify(path)})`)();
+        const loaded = await load(path);
         loaded[name].prototype.processText = (text) => storyText(text, { narration: true });
       } catch (error) {
         console.warn("[story] TTS: the story is not picked by content:", path, error);
@@ -513,83 +474,5 @@
     }
   }
 
-  const api = { CONFIG, STYLE, NSFW_BASE, storyText, installTts, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, impText, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createSum, createMore, moreItems };
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = api;
-    return;
-  }
-  const runtime = { context: () => SillyTavern.getContext(), generateRaw, toastr };
-  const page = window.parent.document;
-  installTts(window.parent);
-  // `argument` says what the one optional text after the command is, for the autocomplete and /help. (Not the context's
-  // registerSlashCommand: SillyTavern marks it deprecated in favour of SlashCommandParser.addCommandObject.)
-  const { SlashCommandParser, SlashCommand, SlashCommandArgument, ARGUMENT_TYPE } = SillyTavern.getContext();
-  const register = (name, help, run, argument) =>
-    SlashCommandParser.addCommandObject(
-      SlashCommand.fromProps({
-        name,
-        helpString: help,
-        unnamedArgumentList: argument ? [SlashCommandArgument.fromProps({ description: argument, typeList: [ARGUMENT_TYPE.STRING] })] : [],
-        callback: async (_named, text) => {
-          await run(String(text ?? ""));
-          return "";
-        },
-      }),
-    );
-
-  // Assigned, and an input event for SillyTavern to notice (its counters and draft saving listen to it).
-  const inputBox = {
-    setInput: (text) => {
-      const box = page.getElementById("send_textarea");
-      box.value = text;
-      box.dispatchEvent(new page.defaultView.Event("input", { bubbles: true }));
-    },
-    focusInput: () => {
-      const box = page.getElementById("send_textarea");
-      box?.focus();
-      box?.setSelectionRange(box.value.length, box.value.length);
-    },
-  };
-  const imp = createImp({ ...runtime, ...inputBox });
-  // Runs inside the click of the popup's button, which a copy needs. Selecting the text box and copying also works where the clipboard API
-  // does not exist (a page opened as http://192.168… on the phone).
-  function copyText() {
-    try {
-      page.getElementById(SUM_TEXT_ID).select();
-      if (!page.execCommand("copy")) throw new Error("浏览器拒绝了复制");
-      toastr.success("已复制");
-    } catch (error) {
-      toastr.error(`复制失败，请在文本框里全选复制: ${error?.message ?? error}`);
-    }
-  }
-  const sum = createSum({
-    ...runtime,
-    show: (text) => {
-      const { callGenericPopup, POPUP_TYPE } = SillyTavern.getContext();
-      // A custom button without a result does not close the popup.
-      return callGenericPopup(sumPopupHtml(text), POPUP_TYPE.TEXT, "", {
-        wide: true,
-        okButton: "关闭",
-        allowVerticalScrolling: true,
-        customButtons: [{ text: "复制", appendAtEnd: true, action: copyText }],
-      });
-    },
-  });
-  const pic = createPic({ ...runtime, ...inputBox });
-  const more = createMore({
-    items: moreItems({
-      pictures: SillyTavern.getContext().extensionSettings?.story?.pictures !== false,
-      pic,
-      sum,
-      inputText: () => page.getElementById("send_textarea")?.value ?? "",
-    }),
-    choose: (texts) => {
-      // The menu opens above the floating button of the Tavern Stack extension; without it, at the left of the middle of the page.
-      return chooseFromMenu(page, page.getElementById("ts-ball"), texts);
-    },
-  });
-  register("imp", "代写：按最新剧情写接下来发生的内容（默认是主角的台词或动作），放进输入框，不自动发送；输入框里是上次的结果时重抽", imp, "草稿（可以不写；草稿写谁就写谁，可以是 NPC）");
-  register("sum", "总结：把整个聊天总结成一份长期记忆，显示在弹窗里，方便复制", sum);
-  register("pic", "画图：让模型写 SD 标签，作为 /sd 命令放进输入框，不自动出图；改完回车出图", pic, "me | you | face | bg | last | pov，或者名字、描述、“A和B热吻”");
-  register("more", "更多：弹出菜单：画此刻、画第一人称(POV)、画我、画NPC、画特写、画景、画输入框里的内容、总结", more);
+  return { CONFIG, STYLE, NSFW_BASE, SUM_TEXT_ID, storyText, installTts, gather, transcript, sumPopupHtml, buildRequest, buildImpRequest, buildImpChoicesRequest, impText, impChoices, parseReply, parseInput, stripMale, sanitizeStory, createPic, createImp, createImpChoices, createSum };
 })();

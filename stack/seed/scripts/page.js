@@ -1,7 +1,7 @@
 // @name 懒人快捷键
 // Helpers for the page itself, not for the chat model:
 //   u d , . scroll the chat up / down by 0.4 of a page (u and , up, d and . down) while no text field has the focus; / focuses the input box,
-//   Esc (SillyTavern's own) and Shift+. leave it; Alt+/ runs /imp (代写);
+//   Esc (SillyTavern's own) and Shift+. leave it; Alt+/ writes the player's next step (代写, of the Tavern Stack extension);
 //   while a reply is being written, a pill above the stop button shows a pulsing dot, the elapsed time and the characters streamed so far
 //   (or how long nothing new has come, when it has stalled);
 //   message frames outside the viewport get their endless animations paused (not the one-shot ones: see pause below).
@@ -12,12 +12,13 @@
 // and they keep animating after being scrolled out of view (about 100 running animations measured, one core busy, gone when the tab was
 // hidden), so message frames are watched for visibility. Frames are re-created on every render, hence the observer.
 const doc = window.parent.document;
-const ALT_COMMANDS = { Slash: "/imp {{input}}" };
+// The extension puts tavernStack on the page; its imp() has nothing to return when the extension is not loaded.
+const ALT_ACTIONS = { Slash: () => window.parent.tavernStack?.imp() };
 const SCROLL = { Comma: -1, Period: 1, KeyU: -1, KeyD: 1 };
 const isTyping = (el) => !!el?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])");
 const onKey = (e) => {
   if (e.ctrlKey || e.metaKey) return;
-  const command = e.altKey && ALT_COMMANDS[e.code];
+  const action = e.altKey && ALT_ACTIONS[e.code];
   const plain = !e.altKey && !e.shiftKey && !isTyping(e.target);
   const scroll = plain && SCROLL[e.code];
   const focusInput = plain && e.code === "Slash";
@@ -25,7 +26,7 @@ const onKey = (e) => {
   // method composing a 》 (key "Process") is left alone, and only the chat input is, since other text fields need their >. It costs the
   // chat input a typed > (quotes, tags): use Shift+. only when that is not wanted there.
   const leaveInput = e.shiftKey && !e.altKey && e.key === ">" && e.target?.id === "send_textarea";
-  if (!command && !scroll && !focusInput && !leaveInput) return;
+  if (!action && !scroll && !focusInput && !leaveInput) return;
   e.preventDefault();
   if (e.repeat) return;
   if (leaveInput) return e.target.blur();
@@ -35,8 +36,10 @@ const onKey = (e) => {
     box?.setSelectionRange(box.value.length, box.value.length);
     return;
   }
-  if (command) {
-    Promise.resolve(window.parent.SillyTavern.getContext().executeSlashCommandsWithOptions(command)).catch((error) => console.warn("[page] command failed:", command, error));
+  if (action) {
+    const done = action();
+    if (done) done.catch((error) => console.warn("[page] action failed:", error));
+    else console.warn("[page] the Tavern Stack extension is not loaded");
     return;
   }
   const chat = doc.getElementById("chat");

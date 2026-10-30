@@ -1,26 +1,16 @@
 // Tavern Stack: prompts that follow the character (profiles), a floating panel and a settings page, as one SillyTavern extension.
 // It uses SillyTavern's own extension context only (SillyTavern.getContext()), not the Tavern Helper scripts.
+import { createActions } from "./actions.js";
+import { fill, h } from "./dom.js";
 import { IN_CHAT, ROLES, activePrompts, nameMatches, newId, normalizeSettings } from "./profiles.js";
+import { mountTail } from "./tail.js";
 
 const MODULE = "tavern_stack";
 const context = () => SillyTavern.getContext();
 const settings = () => context().extensionSettings[MODULE];
 const save = () => context().saveSettingsDebounced();
-
-// Children may be nested arrays, and false, null or undefined where a part is left out.
-const nodes = (children) => children.flat().filter((child) => child != null && child !== false);
-const fill = (element, ...children) => element.replaceChildren(...nodes(children));
-const h = (tag, props = {}, ...children) => {
-    const element = document.createElement(tag);
-    for (const [name, value] of Object.entries(props)) {
-        if (name === "class") element.className = value;
-        else if (name.startsWith("on")) element.addEventListener(name.slice(2), value);
-        else if (name === "value" || name === "checked") element[name] = value;
-        else element.setAttribute(name, value);
-    }
-    element.append(...nodes(children));
-    return element;
-};
+let tail = null;
+let actions = null;
 
 // Prompts: the ones set last time are cleared when they no longer apply (an empty text removes an extension prompt).
 let applied = new Set();
@@ -43,6 +33,7 @@ const commit = () => {
     save();
     apply();
     placeBall();
+    tail?.refresh();
 };
 
 // Settings page, inside the extensions drawer.
@@ -61,6 +52,7 @@ function settingsPage() {
             root,
             check("启用（关掉后不再发送任何规则）", s.enabled, (value) => ((s.enabled = value), commit())),
             check("显示悬浮按钮", s.ball.show, (value) => ((s.ball.show = value), commit())),
+            check("在最新回复下显示代写候选", s.tail.show, (value) => ((s.tail.show = value), commit())),
             h(
                 "div",
                 { class: "ts-row" },
@@ -182,7 +174,14 @@ function openPanel() {
     drawPanel();
 }
 
-const run = (command) => Promise.resolve(context().executeSlashCommandsWithOptions(command)).catch((error) => window.toastr?.error(String(error?.message ?? error)));
+// The choices are written into the card under the latest reply, so the chat is scrolled there. With the card switched off the panel asks
+// for the single next step instead.
+function suggestHere() {
+    if (!settings().tail.show || !tail) return actions.imp();
+    const chat = document.getElementById("chat");
+    chat?.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
+    return tail.generate();
+}
 
 function toggleFullscreen() {
     if (document.fullscreenElement) return document.exitFullscreen();
@@ -203,8 +202,10 @@ function drawPanel() {
     const s = settings();
     const name = characterName();
     const profiles = s.profiles.filter((profile) => profile.enabled && nameMatches(profile.match, name));
-    // The panel closes first: the menu of /more and the fullscreen change both want the page to themselves.
+    // Everything is on the panel, none of it behind a menu. It closes first: what a button writes goes into the input box, and fullscreen
+    // wants the page to itself.
     const button = (label, action) => h("button", { class: "menu_button ts-action", onclick: () => (closePanel(), action()) }, label);
+    const group = (title, ...buttons) => h("div", { class: "ts-group" }, h("div", { class: "ts-title" }, title), h("div", { class: "ts-actions" }, buttons));
     fill(
         panel,
         h("div", { class: "ts-head" }, h("b", {}, "Tavern Stack"), h("span", { class: "ts-close", onclick: closePanel }, "✕")),
@@ -213,12 +214,27 @@ function drawPanel() {
         profiles.length
             ? profiles.map((profile) => h("div", { class: "ts-group" }, h("div", { class: "ts-title" }, profile.name), profile.prompts.map((prompt) => h("label", { class: "ts-check" }, h("input", { type: "checkbox", checked: prompt.enabled, onchange: (e) => ((prompt.enabled = e.target.checked), commit()) }), h("span", {}, prompt.label)))))
             : h("div", { class: "ts-meta" }, "这个角色没有匹配的规则"),
-        h("div", { class: "ts-actions" }, button("代写", () => run("/imp {{input}}")), button("更多", () => run("/more")), button("全屏", toggleFullscreen), button("设置", openSettings)),
+        group("写", button("代写候选", suggestHere), button("写一句", actions.imp)),
+        actions.pictures() &&
+            group(
+                "画（标签放进输入框，改完回车出图）",
+                button("此刻", () => actions.pic("last")),
+                button("POV", () => actions.pic("pov")),
+                button("我", () => actions.pic("me")),
+                button("NPC", () => actions.pic("you")),
+                button("特写", () => actions.pic("face")),
+                button("景", () => actions.pic("bg")),
+                button("输入框", () => actions.pic()),
+            ),
+        group("其他", button("总结", actions.sum), button("全屏", toggleFullscreen), button("设置", openSettings)),
     );
-    const left = clamp(ball.offsetLeft + BALL - panel.offsetWidth, 8, window.innerWidth - panel.offsetWidth - 8);
-    const below = ball.offsetTop + BALL + 8;
-    const top = below + panel.offsetHeight > window.innerHeight - 8 ? ball.offsetTop - panel.offsetHeight - 8 : below;
-    Object.assign(panel.style, { left: `${left}px`, top: `${Math.max(8, top)}px` });
+    // Always the same place, whatever the button is: the right edge, just above the input bar. (By left and top, not bottom and right:
+    // SillyTavern's style.css puts a transform on <html>, which makes it the containing block of fixed elements.)
+    const bar = document.getElementById("send_form")?.offsetHeight ?? 0;
+    Object.assign(panel.style, {
+        left: `${Math.max(8, window.innerWidth - panel.offsetWidth - 8)}px`,
+        top: `${Math.max(8, window.innerHeight - bar - panel.offsetHeight - 12)}px`,
+    });
 }
 
 function init() {
@@ -226,6 +242,11 @@ function init() {
     store[MODULE] = normalizeSettings(store[MODULE]);
     mountSettings();
     buildBall();
+    actions = createActions({ context });
+    actions.installTts();
+    // For the scripts of the page (Alt+/ in page.js), which are not modules of the extension.
+    window.tavernStack = { imp: actions.imp };
+    tail = mountTail({ context, enabled: () => settings().tail.show, suggest: actions.suggest, write: actions.imp });
     placeBall();
     apply();
     const { eventSource, eventTypes } = context();
