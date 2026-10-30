@@ -1,0 +1,11 @@
+{
+    "display_name": "Tavern Stack",
+    "loading_order": 50,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "keel",
+    "version": "0.1.0",
+    "auto_update": false
+}

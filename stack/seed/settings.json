@@ -6,7 +6,7 @@
     "oai_settings": {
         "chat_completion_source": "custom",
         "custom_url": "http://host.docker.internal:3425/v1",
-        "custom_include_body": ""
+        "custom_include_body": "thinking:\n  type: disabled\nreasoning_effort: none"
     },
     "power_user": {
         "chat_truncation": 5,

@@ -7,10 +7,12 @@ plugin_dir="${ST_PLUGIN_DIR:-/home/node/app/plugins}"
 
 # dir=name=url; a failed clone must not block SillyTavern from starting.
 # SillyTavern-EdgeTTS-Plugin is the server side of the TTS "Edge" provider (needs enableServerPlugins).
+# tavern-stack is this repository: its root is the extension; this directory (stack/) comes along in the clone and the extension ignores it.
 for spec in \
   "$ext_dir=JS-Slash-Runner=https://github.com/N0VI028/JS-Slash-Runner.git" \
   "$ext_dir=ST-Prompt-Template=https://github.com/zonde306/ST-Prompt-Template.git" \
   "$ext_dir=story-oracle=https://github.com/namelessone88/story-oracle.git" \
+  "$ext_dir=tavern-stack=https://github.com/aar0u/tavern-stack.git" \
   "$plugin_dir=SillyTavern-EdgeTTS-Plugin=https://github.com/SillyTavern/SillyTavern-EdgeTTS-Plugin.git"; do
   dir="${spec%%=*}"
   rest="${spec#*=}"
