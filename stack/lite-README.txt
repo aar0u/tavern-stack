@@ -7,7 +7,7 @@ SillyTavern（精简版：只有 ST，聊天连主机上的网关，没有生图
 3. 浏览器打开 http://localhost:8000 （局域网里其他设备用这台机器的地址:8000）。
 4. 聊天用的是远端的 gateway（那台机器要开着，并且网关的 8789 端口可访问）。地址写在
    seed/settings.json 的 oai_settings.custom_url 里，换地址就改它，然后 docker compose up -d --force-recreate。
-5. 这里没有生图：快捷回复"更多"菜单里只有"总结"，/pic 用不了。
+5. 这里没有生图：悬浮按钮"更多"菜单里只有"总结"，/pic 用不了。
 6. 数据都在 ./data 里（聊天、设置）；要备份就备份这个目录。
 7. 改了 seed/ 里的文件后重新应用：
        docker compose up -d --force-recreate

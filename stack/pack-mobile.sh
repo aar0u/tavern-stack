@@ -20,7 +20,7 @@ cp "$script_dir/merge-settings.mjs" "$pkg/"
 cp "$script_dir/gateway.mjs" "$pkg/"
 cp "$script_dir/gateway.mobile.env" "$pkg/gateway.env"
 # 2. Copy seed (sd settings point at the PC)
-cp -r "$script_dir/seed/scripts" "$script_dir/seed/QuickReplies" "$script_dir/seed/avatars" "$pkg/seed/"
+cp -r "$script_dir/seed/scripts" "$script_dir/seed/avatars" "$pkg/seed/"
 python3 -I - "$script_dir/seed/settings.json" "$pkg/seed/settings.json" <<'EOF'
 import json, sys
 settings = json.load(open(sys.argv[1], encoding="utf8"))
@@ -66,6 +66,7 @@ for spec in \
   "$ext_dir=JS-Slash-Runner=https://github.com/N0VI028/JS-Slash-Runner.git" \
   "$ext_dir=ST-Prompt-Template=https://github.com/zonde306/ST-Prompt-Template.git" \
   "$ext_dir=story-oracle=https://github.com/namelessone88/story-oracle.git" \
+  "$ext_dir=tavern-stack=https://github.com/aar0u/tavern-stack.git" \
   "$plugin_dir=SillyTavern-EdgeTTS-Plugin=https://github.com/SillyTavern/SillyTavern-EdgeTTS-Plugin.git"; do
   dir="${spec%%=*}"
   rest="${spec#*=}"
@@ -80,8 +81,7 @@ done
 # Apply seed settings
 if [ -f "$BASE_DIR/merge-settings.mjs" ] && [ -d "$BASE_DIR/seed" ]; then
   echo "Applying seed settings..."
-  mkdir -p "$USER_DATA/QuickReplies" "$USER_DATA/User Avatars"
-  cp -f "$BASE_DIR/seed/QuickReplies/"*.json "$USER_DATA/QuickReplies/" 2>/dev/null || true
+  mkdir -p "$USER_DATA/User Avatars"
   cp -f "$BASE_DIR/seed/avatars/"*.png "$USER_DATA/User Avatars/" 2>/dev/null || true
   node "$BASE_DIR/merge-settings.mjs" "$BASE_DIR/seed" "$USER_DATA/settings.json" "$ST_DIR/default/content/settings.json"
 fi

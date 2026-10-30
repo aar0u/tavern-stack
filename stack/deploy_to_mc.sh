@@ -21,7 +21,7 @@ cp "$DIR/init.sh" "$DIR/merge-settings.mjs" "$DIR/gateway.mjs" "$DIR/docker-comp
 # whitelist off): the Azure NSG decides who reaches ports 8000 and 8789 (the gateway).
 printf 'ST_ROOT=./data\nST_RESTART=unless-stopped\nST_LAN_CIDR=0.0.0.0/0\n' > "$pkg/.env"
 printf 'UPSTREAM_URL=http://%s:3425/v1\nUPSTREAM_KEY=\n' "$LAN_HOST" > "$pkg/gateway.env"
-cp -r "$DIR/seed/scripts" "$DIR/seed/QuickReplies" "$DIR/seed/avatars" "$pkg/seed/"
+cp -r "$DIR/seed/scripts" "$DIR/seed/avatars" "$pkg/seed/"
 python3 -I - "$DIR/seed/settings.json" "$pkg/seed/settings.json" "$LAN_HOST" <<'EOF'
 import json, sys
 settings = json.load(open(sys.argv[1], encoding="utf8"))

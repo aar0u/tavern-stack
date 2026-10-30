@@ -203,7 +203,8 @@ function drawPanel() {
     const s = settings();
     const name = characterName();
     const profiles = s.profiles.filter((profile) => profile.enabled && nameMatches(profile.match, name));
-    const button = (label, onclick) => h("button", { class: "menu_button ts-action", onclick }, label);
+    // The panel closes first: the menu of /more and the fullscreen change both want the page to themselves.
+    const button = (label, action) => h("button", { class: "menu_button ts-action", onclick: () => (closePanel(), action()) }, label);
     fill(
         panel,
         h("div", { class: "ts-head" }, h("b", {}, "Tavern Stack"), h("span", { class: "ts-close", onclick: closePanel }, "✕")),

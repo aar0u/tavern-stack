@@ -584,11 +584,8 @@
       inputText: () => page.getElementById("send_textarea")?.value ?? "",
     }),
     choose: (texts) => {
-      // The menu opens above the 更多 button. The quick replies are known by their ids in seed/QuickReplies/quick-replies.json (3 is 更多);
-      // a button on the page carries only its label, which is looked up from the id.
-      const label = window.parent.quickReplyApi?.getQrByLabel("quick-replies", 3)?.label;
-      const anchor = [...page.querySelectorAll(".qr--button-label")].find((element) => element.textContent.trim() === label)?.closest(".qr--button");
-      return chooseFromMenu(page, anchor, texts);
+      // The menu opens above the floating button of the Tavern Stack extension; without it, at the left of the middle of the page.
+      return chooseFromMenu(page, page.getElementById("ts-ball"), texts);
     },
   });
   register("imp", "代写：按最新剧情写接下来发生的内容（默认是主角的台词或动作），放进输入框，不自动发送；输入框里是上次的结果时重抽", imp, "草稿（可以不写；草稿写谁就写谁，可以是 NPC）");

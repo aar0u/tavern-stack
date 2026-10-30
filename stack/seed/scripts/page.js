@@ -1,8 +1,7 @@
 // @name 懒人快捷键
 // Helpers for the page itself, not for the chat model:
 //   u d , . scroll the chat up / down by 0.4 of a page (u and , up, d and . down) while no text field has the focus; / focuses the input box,
-//   Esc (SillyTavern's own) and Shift+. leave it; Alt+/ runs the 代写 quick reply;
-//   the 全屏 quick reply (its message is empty) toggles browser fullscreen;
+//   Esc (SillyTavern's own) and Shift+. leave it; Alt+/ runs /imp (代写);
 //   while a reply is being written, a pill above the stop button shows a pulsing dot, the elapsed time and the characters streamed so far
 //   (or how long nothing new has come, when it has stalled);
 //   message frames outside the viewport get their endless animations paused (not the one-shot ones: see pause below).
@@ -13,18 +12,12 @@
 // and they keep animating after being scrolled out of view (about 100 running animations measured, one core busy, gone when the tab was
 // hidden), so message frames are watched for visibility. Frames are re-created on every render, hence the observer.
 const doc = window.parent.document;
-// The quick replies are known by their ids in seed/QuickReplies/quick-replies.json, which SillyTavern's own API takes in place of a label.
-// A button on the page carries no id, only its label, so that is looked up from the id when a button has to be recognised.
-const QR_SET = "quick-replies";
-const QR_IMPERSONATE = 2;
-const QR_FULLSCREEN = 4;
-const qrLabel = (id) => window.parent.quickReplyApi?.getQrByLabel(QR_SET, id)?.label;
-const QUICK_REPLIES = { Slash: QR_IMPERSONATE };
+const ALT_COMMANDS = { Slash: "/imp {{input}}" };
 const SCROLL = { Comma: -1, Period: 1, KeyU: -1, KeyD: 1 };
 const isTyping = (el) => !!el?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])");
 const onKey = (e) => {
   if (e.ctrlKey || e.metaKey) return;
-  const quickReply = e.altKey && QUICK_REPLIES[e.code];
+  const command = e.altKey && ALT_COMMANDS[e.code];
   const plain = !e.altKey && !e.shiftKey && !isTyping(e.target);
   const scroll = plain && SCROLL[e.code];
   const focusInput = plain && e.code === "Slash";
@@ -32,7 +25,7 @@ const onKey = (e) => {
   // method composing a 》 (key "Process") is left alone, and only the chat input is, since other text fields need their >. It costs the
   // chat input a typed > (quotes, tags): use Shift+. only when that is not wanted there.
   const leaveInput = e.shiftKey && !e.altKey && e.key === ">" && e.target?.id === "send_textarea";
-  if (!quickReply && !scroll && !focusInput && !leaveInput) return;
+  if (!command && !scroll && !focusInput && !leaveInput) return;
   e.preventDefault();
   if (e.repeat) return;
   if (leaveInput) return e.target.blur();
@@ -42,26 +35,13 @@ const onKey = (e) => {
     box?.setSelectionRange(box.value.length, box.value.length);
     return;
   }
-  if (quickReply) {
-    // Run through the API: it needs no button on the page, and a missing quick reply is an error to report, not a silent no-op.
-    const api = window.parent.quickReplyApi;
-    if (!api) console.warn("[page] the quick reply extension is not loaded");
-    else api.executeQuickReply(QR_SET, quickReply).catch((error) => console.warn("[page] quick reply failed:", quickReply, error));
+  if (command) {
+    Promise.resolve(window.parent.SillyTavern.getContext().executeSlashCommandsWithOptions(command)).catch((error) => console.warn("[page] command failed:", command, error));
     return;
   }
   const chat = doc.getElementById("chat");
   if (chat) chat.scrollBy({ top: scroll * chat.clientHeight * 0.4, behavior: "smooth" });
   else console.warn("[page] #chat not found");
-};
-
-// requestFullscreen has to run inside the click itself, not after a quick reply and a slash command have been run, so this listens for
-// the click on the button. iPhone Safari has no element fullscreen, so there it only warns.
-const onFullscreenClick = (e) => {
-  const button = e.target.closest?.(".qr--button");
-  if (!button || button.querySelector(".qr--button-label")?.textContent.trim() !== qrLabel(QR_FULLSCREEN)) return;
-  if (doc.fullscreenElement) return doc.exitFullscreen();
-  if (!doc.documentElement.requestFullscreen) return window.parent.toastr?.warning("这个浏览器不支持全屏（iPhone 可以用 Safari 的“添加到主屏幕”）");
-  doc.documentElement.requestFullscreen({ navigationUI: "hide" }).catch((error) => window.parent.toastr?.error(`全屏失败：${error.message}`));
 };
 
 const keyTargets = new Set();
@@ -202,7 +182,6 @@ eventOn(tavern_events.GENERATION_STARTED, (type, options, dryRun) => {
 });
 
 bindKeys(doc);
-doc.addEventListener("click", onFullscreenClick, true);
 watchFrames(doc);
 const mutations = new MutationObserver((records) => {
   for (const record of records) {
@@ -214,7 +193,6 @@ const mutations = new MutationObserver((records) => {
 });
 mutations.observe(doc.body, { childList: true, subtree: true });
 window.addEventListener("pagehide", () => {
-  doc.removeEventListener("click", onFullscreenClick, true);
   mutations.disconnect();
   stopObserver.disconnect();
   clearInterval(ticker);

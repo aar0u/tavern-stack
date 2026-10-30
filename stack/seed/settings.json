@@ -60,16 +60,11 @@
             }
         },
         "quickReplyV2": {
-            "isEnabled": true,
+            "isEnabled": false,
             "isCombined": false,
             "isPopout": false,
             "config": {
-                "setList": [
-                    {
-                        "set": "quick-replies",
-                        "isVisible": true
-                    }
-                ]
+                "setList": []
             }
         },
         "sd": {

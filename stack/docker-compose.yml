@@ -37,7 +37,7 @@ services:
     stop_grace_period: 20s
     restart: "${ST_RESTART:-no}"
 
-  # One-shot: applies ./seed (settings.json merged in, QuickReplies copied over) before SillyTavern starts.
+  # One-shot: applies ./seed (settings.json merged in, avatars copied over) before SillyTavern starts.
   st-init:
     container_name: st-init
     image: ghcr.io/sillytavern/sillytavern:latest

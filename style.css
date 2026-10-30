@@ -41,10 +41,12 @@
 #ts-panel .ts-group { margin: 6px 0; }
 #ts-panel .ts-title { font-size: 12px; opacity: 0.75; }
 #ts-panel .ts-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-#ts-panel .ts-action { flex: 1 1 auto; margin: 0; }
+#ts-panel .ts-action { flex: 1 1 auto; width: auto; white-space: nowrap; margin: 0; }
 
 .ts-check { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .ts-settings .ts-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .ts-settings .ts-field { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
 .ts-settings .ts-prompt { margin: 8px 0; padding: 6px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 6px; }
 .ts-settings .ts-depth { width: 4em; }
+/* SillyTavern's .menu_button is as narrow as its content can break, so a label ended up one character per line. */
+.ts-settings .menu_button { width: auto; min-width: max-content; white-space: nowrap; flex: 0 0 auto; margin: 0; }

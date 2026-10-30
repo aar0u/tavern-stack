@@ -61,12 +61,11 @@ UPSTREAM_KEY=
 |---|---|
 | `seed/settings.json` | 深度合并进用户的 `settings.json`（对象合并，数组和标量替换） |
 | `seed/scripts/*.js` | 酒馆助手全局脚本；同名（`// @name`）的被替换，自己建的保留；改名后旧条目要手动删 |
-| `seed/QuickReplies/*.json` | 复制进快捷回复集；文件名就是集合名 |
 | `seed/avatars/*.png` | 复制进 `User Avatars/`；`user-default.png` 是 persona 齐野的头像 |
 
 `oai_settings.custom_include_body` 在 seed 里是 `thinking: {type: disabled}` 加 `reasoning_effort: none`（YAML 格式，对所有模型生效，重启后回到 seed 的值），请求里明确要求关闭推理。WorkBuddy 的 magpie 插件从 0.1.43 起，对没有指定档位的请求自动补上 `high`，所以要写明；实测 `workbuddy-ai/deepseek-v4.1-flash` 在这两个参数下仍会返回一小段原生思考，参数只是请求，不保证关掉。要换档位，在 ST 里把它改成 `reasoning_effort: low`（或 `medium`/`high`）；要不发这些参数，把 seed 里的值改回空字符串，直连时空值不要写成 `reasoning_effort: ''`，因为只有网关会把它剥掉。换到不认识这两个参数的上游而被拒绝时，在 ST 里清空这个字段。
 
-快捷回复 `quick-replies`：`代写`（id 2）、`更多`（id 3）、`全屏`（id 4）。脚本按 id 引用；改 id 要同步改 `page.js` 和 `story.js` 里的常量。
+快捷回复栏已经关掉（seed 里 `quickReplyV2.isEnabled` 是 `false`）：代写、更多、全屏现在在扩展的悬浮按钮里，见 `../README.md`。
 
 ## 打包
 
@@ -128,7 +127,7 @@ python3 -I chat-cleanup/clean_chat.py --self-test
 
 - 没有输入框有焦点时：`u` `,` 向上、`d` `.` 向下翻聊天 0.4 屏；`/` 聚焦输入框；输入框里 `Shift+.` 或 `Esc` 失焦（`Shift+.` 在聊天输入框里会吃掉键入的 `>`）；`Alt+/` 随时运行"代写"。
 - 发送消息时输入框会失焦，这样回复期间快捷键可用。
-- "全屏"快捷回复：进出浏览器全屏（iPhone Safari 不支持）。
+- `Alt+/` 运行 `/imp`（代写），输入框有焦点时也行。
 - 生成中，停止按钮上方显示耗时和已收到字数的小药丸。
 - 消息 iframe 滚出视野后，暂停里面无限循环的动画（有的卡画动态背景，会占满一个核）。
 
@@ -139,9 +138,9 @@ python3 -I chat-cleanup/clean_chat.py --self-test
 | 命令 | 入口 | 作用 |
 |---|---|---|
 | `/pic me｜you｜face｜bg｜last｜pov｜<描述>` | "更多"菜单 | 让模型写 SD 标签，把完整的 `/sd …` 放进输入框，改完回车才出图。最新剧情含 `EXPLICIT_TERMS` 的词或参数写了 `nsfw` 时，加 `NSFW_BASE` |
-| `/imp [草稿]` | "代写"、`Alt+/` | 写玩家接下来的台词或动作，放进输入框，不自动发送；结果没改过时再按是重抽 |
+| `/imp [草稿]` | 悬浮按钮的"代写"、`Alt+/` | 写玩家接下来的台词或动作，放进输入框，不自动发送；结果没改过时再按是重抽 |
 | `/sum` | "更多"菜单 | 把聊天总结成 500 到 800 字的长期记忆，弹窗里复制，贴进"作者注释" |
-| `/more` | "更多"快捷回复 | 弹出小菜单 |
+| `/more` | 悬浮按钮的"更多" | 弹出小菜单，在悬浮按钮上方 |
 
 - 不认标签名：一条回复按"顶层标签块 + 标签外文字"切段，名字含 `think`/`thought`/`reason`/`analy` 的和像 JSON 的不算，字最多的那段当故事。朗读（TTS）用同一套，另有 `settings.json` 里的保守正则兜底，钩子只装给 Edge 提供方。
 - 人称、语言、时态一律照玩家自己的发言，脚本不绑某张卡或预设。
