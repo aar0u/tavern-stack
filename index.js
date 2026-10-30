@@ -36,7 +36,7 @@ const commit = () => {
     tail?.refresh();
 };
 
-// Settings page, inside the extensions drawer.
+// The settings page, drawn into the window of openSettings.
 function settingsPage() {
     const root = h("div", { class: "ts-settings" });
     let selected = settings().profiles[0]?.id;
@@ -108,17 +108,28 @@ function settingsPage() {
     return root;
 }
 
+// The settings open in a window of their own, not as a drawer among the other extensions (a long page there pushes them all down). The
+// extensions list only gets a button, so the settings stay reachable with the ball switched off.
+function openSettings() {
+    if (document.getElementById("ts-modal")) return closeSettings();
+    const close = h("span", { class: "ts-close", onclick: closeSettings }, "✕");
+    const box = h("div", { id: "ts-modal-box" }, h("div", { class: "ts-head" }, h("b", {}, "Tavern Stack 设置"), close), settingsPage());
+    const modal = h("div", { id: "ts-modal", onclick: (e) => e.target === modal && closeSettings() }, box);
+    document.body.append(modal);
+}
+
+const closeSettings = () => document.getElementById("ts-modal")?.remove();
+
 function mountSettings() {
     const host = document.getElementById("extensions_settings2") ?? document.getElementById("extensions_settings");
-    if (!host || document.getElementById("tavern-stack-drawer")) return;
-    host.append(
-        h(
-            "div",
-            { id: "tavern-stack-drawer", class: "inline-drawer" },
-            h("div", { class: "inline-drawer-toggle inline-drawer-header" }, h("b", {}, "Tavern Stack"), h("div", { class: "inline-drawer-icon fa-solid fa-circle-chevron-down down" })),
-            h("div", { class: "inline-drawer-content" }, settingsPage()),
-        ),
-    );
+    if (!host || document.getElementById("tavern-stack-open")) return;
+    // The extensions drawer would stay open over the window, so it is closed first.
+    const open = () => {
+        const drawer = document.querySelector("#extensions-settings-button");
+        if (drawer?.querySelector(".drawer-content")?.classList.contains("openDrawer")) drawer.querySelector(".drawer-toggle")?.click();
+        openSettings();
+    };
+    host.append(h("div", { id: "tavern-stack-open" }, h("div", { class: "menu_button", onclick: open }, "Tavern Stack 设置")));
 }
 
 // The floating button and its panel.
@@ -185,15 +196,6 @@ function toggleFullscreen() {
     if (document.fullscreenElement) return document.exitFullscreen();
     if (!document.documentElement.requestFullscreen) return window.toastr?.warning("这个浏览器不支持全屏");
     return document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch((error) => window.toastr?.error(`全屏失败：${error.message}`));
-}
-
-function openSettings() {
-    document.querySelector("#extensions-settings-button .drawer-toggle")?.click();
-    setTimeout(() => {
-        const drawer = document.getElementById("tavern-stack-drawer");
-        if (drawer && getComputedStyle(drawer.querySelector(".inline-drawer-content")).display === "none") drawer.querySelector(".inline-drawer-toggle").click();
-        drawer?.scrollIntoView({ block: "center" });
-    }, 250);
 }
 
 function drawPanel() {
