@@ -52,7 +52,6 @@ function settingsPage() {
             root,
             check("启用（关掉后不再发送任何规则）", s.enabled, (value) => ((s.enabled = value), commit())),
             check("显示悬浮按钮", s.ball.show, (value) => ((s.ball.show = value), commit())),
-            check("在最新回复下显示代写候选", s.tail.show, (value) => ((s.tail.show = value), commit())),
             h(
                 "div",
                 { class: "ts-row" },
@@ -114,11 +113,12 @@ function openSettings() {
     if (document.getElementById("ts-modal")) return closeSettings();
     const close = h("span", { class: "ts-close", onclick: closeSettings }, "✕");
     const box = h("div", { id: "ts-modal-box" }, h("div", { class: "ts-head" }, h("b", {}, "Tavern Stack 设置"), close), settingsPage());
-    const modal = h("div", { id: "ts-modal", onclick: (e) => e.target === modal && closeSettings() }, box);
+    const modal = h("dialog", { id: "ts-modal", onclick: (e) => e.target === modal && closeSettings(), onclose: () => modal.remove() }, box);
     document.body.append(modal);
+    modal.showModal();
 }
 
-const closeSettings = () => document.getElementById("ts-modal")?.remove();
+const closeSettings = () => document.getElementById("ts-modal")?.close();
 
 function mountSettings() {
     const host = document.getElementById("extensions_settings2") ?? document.getElementById("extensions_settings");
@@ -150,7 +150,7 @@ function placeBall() {
 }
 
 function buildBall() {
-    ball = h("div", { id: "ts-ball", title: "Tavern Stack" }, "🧰");
+    ball = h("div", { id: "ts-ball", title: "Tavern Stack" }, h("img", { src: new URL("./mascot.svg", import.meta.url).href, alt: "" }));
     let start = null;
     ball.addEventListener("pointerdown", (e) => {
         start = { x: e.clientX, y: e.clientY, left: ball.offsetLeft, top: ball.offsetTop, moved: false };
@@ -187,9 +187,10 @@ function openPanel() {
 
 // The choices are written into the card under the latest reply, so the chat is scrolled there.
 function suggestHere() {
+    const result = tail.generate();
     const chat = document.getElementById("chat");
     chat?.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
-    return tail.generate();
+    return result;
 }
 
 function toggleFullscreen() {
@@ -251,7 +252,7 @@ function init() {
     actions.installTts();
     // For the scripts of the page (Alt+/ in page.js), which are not modules of the extension.
     window.tavernStack = { suggest: suggestHere };
-    tail = mountTail({ context, enabled: () => settings().tail.show, suggest: actions.suggest });
+    tail = mountTail({ context, suggest: actions.suggest });
     placeBall();
     apply();
     const { eventSource, eventTypes } = context();

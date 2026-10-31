@@ -47,8 +47,7 @@ test("settings from disk are completed, and the user's profiles are kept", () =>
     });
     assert.equal(mine.enabled, true, "a wrong type falls back to the default");
     assert.deepEqual(mine.ball, { show: true, x: 10, y: null });
-    assert.deepEqual(mine.tail, { show: true }, "settings from before the card have it on");
-    assert.deepEqual(normalizeSettings({ tail: { show: false } }).tail, { show: false });
+    assert.equal(normalizeSettings({ tail: { show: false } }).tail, undefined);
     assert.equal(mine.profiles.length, 1, "the default profile does not come back next to the user's");
     assert.deepEqual(mine.profiles[0].prompts, [{ id: "p", label: "提示词", enabled: true, depth: 0, role: "system", text: "hi" }]);
 

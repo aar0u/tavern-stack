@@ -7,10 +7,11 @@ import { insertText, showsFor, suggestionKey } from "./suggest.js";
 const ID = "ts-tail";
 
 // suggest() gives the four choices (and throws a reason when it cannot).
-export function mountTail({ context, enabled, suggest }) {
+export function mountTail({ context, suggest }) {
     const state = { key: null, status: "idle", choices: [], error: "" };
     let card = null;
     let scheduled = false;
+    let revision = 0;
 
     const inputBox = () => document.getElementById("send_textarea");
 
@@ -43,14 +44,17 @@ export function mountTail({ context, enabled, suggest }) {
     function sync() {
         const chat = context().chat;
         const key = suggestionKey(chat);
-        if (key !== state.key) Object.assign(state, { key, status: state.status === "busy" ? "busy" : "idle", choices: [], error: "" });
+        if (key !== state.key) {
+            revision++;
+            Object.assign(state, { key, status: "idle", choices: [], error: "" });
+        }
         return showsFor(chat);
     }
 
     function refresh() {
         scheduled = false;
         const chat = document.getElementById("chat");
-        if (!chat || !enabled() || !sync()) return card?.remove();
+        if (!chat || !sync() || state.status === "idle") return card?.remove();
         card ??= h("div", { id: ID });
         if (chat.lastElementChild !== card) chat.append(card);
         draw();
@@ -65,20 +69,19 @@ export function mountTail({ context, enabled, suggest }) {
 
     async function generate() {
         if (state.status === "busy") return;
-        // Without a card (switched off, or the player's own message is last) the answer would have nowhere to show.
-        if (!enabled() || !sync()) return window.toastr?.info("代写卡没有显示（设置里关了，或最新一条是你自己的消息），没有可接的剧情");
-        const key = state.key;
+        if (!sync()) return window.toastr?.info("最新一条不是角色回复，没有可接的剧情");
+        const currentRevision = revision;
         Object.assign(state, { status: "busy", choices: [], error: "" });
-        draw();
+        refresh();
         let outcome;
         try {
             outcome = { status: "done", choices: await suggest() };
         } catch (error) {
             outcome = { status: "error", error: String(error?.message ?? error) };
         }
-        if (state.key !== key) {
+        sync();
+        if (revision !== currentRevision) {
             // The chat moved on while the model was writing: the answer is for another state and is dropped.
-            state.status = "idle";
             return refresh();
         }
         Object.assign(state, outcome);

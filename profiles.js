@@ -15,7 +15,6 @@ export const DEFAULT_SETTINGS = {
     version: 1,
     enabled: true,
     ball: { show: true, x: null, y: null },
-    tail: { show: true },
     profiles: [
         {
             id: "daliang",
@@ -48,7 +47,6 @@ export function normalizeSettings(raw) {
         version: 1,
         enabled: flag(raw.enabled, true),
         ball: { show: flag(ball.show, true), x: number(ball.x), y: number(ball.y) },
-        tail: { show: flag(raw.tail?.show, true) },
         profiles: profiles
             .filter((profile) => profile && typeof profile === "object")
             .map((profile, index) => ({
