@@ -84,8 +84,11 @@ export function mountTail({ context, suggest }) {
             // The chat moved on while the model was writing: the answer is for another state and is dropped.
             return refresh();
         }
+        const chat = document.getElementById("chat");
+        const atBottom = chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight <= 80;
         Object.assign(state, outcome);
         refresh();
+        if (atBottom) chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
     }
 
     // The chat element exists from the start; its children are replaced as messages come and go.

@@ -40,4 +40,18 @@ test("the card appears on request and disappears when the chat changes", async (
     resolve(["old choice"]);
     await pending;
     assert.equal(chatElement.children.length, 0);
+
+    const scrolls = [];
+    Object.assign(chatElement, { scrollHeight: 1000, clientHeight: 400, scrollTop: 590, scrollTo: (options) => scrolls.push(options) });
+    const nearBottom = tail.generate();
+    resolve(["new choice"]);
+    await nearBottom;
+    assert.equal(scrolls.length, 1);
+    assert.equal(scrolls[0].top, 1000);
+
+    chatElement.scrollTop = 100;
+    const readingEarlier = tail.generate();
+    resolve(["another choice"]);
+    await readingEarlier;
+    assert.equal(scrolls.length, 1);
 });
