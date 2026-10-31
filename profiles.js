@@ -9,7 +9,9 @@ export const ROLES = { system: 0, user: 1, assistant: 2 };
 // One line before the body of every reply, in the seven fields the 大凉龙虎传 time script reads (the first two decide the clock), and the
 // update block after it. The model leaves both out half of the time when the card only says "when needed".
 const HEADER = `【页眉】回复的正式正文之前（准备、草稿、思考、变量分析之外），独立输出一行时空页眉，固定七格，用全角｜连接，整行不加字段名、方括号或加粗：时间｜本轮经过｜旬｜朝昼暮夜｜天气｜地点｜当前剧情线。有明确落点时，第一格写「至」加完整年号、月、日、时辰，第二格写「—」；只有时长时，第一格照抄当前时间，第二格写实际经过；当前剧情线没有时写「—」。每轮必须输出，不得省略。页眉之后空一行再写正文。`;
-const UPDATE = `【落卷】每轮正文之后必须输出一个 <UpdateVariable> 块，含 <Analysis> 和 <JSONPatch>。本轮没有变量变化时，JSONPatch 写 []，不得省略整个块。`;
+const UPDATE_V1 = `【落卷】每轮正文之后必须输出一个 <UpdateVariable> 块，含 <Analysis> 和 <JSONPatch>。本轮没有变量变化时，JSONPatch 写 []，不得省略整个块。`;
+const UPDATE = `${UPDATE_V1}
+【好感待办格式】仅在剧情确有需要时向 /系统接入/待办/<唯一事件ID> 添加 social 事务。value 必须是对象，直接包含 kind、actorId、event，例如：{"kind":"social","actorId":"同道:人物名","event":{"kind":"市井交道","matching":"寻常交涉","evidence":"实际发生的事实","family":"该事实的唯一编号"}}。kind 必须在 value 顶层；禁止用 {"signature":"..."} 包装待办，signature 是已结算事务的记录，不是待办格式。人物、事件类型、匹配、依据和编号按实际情况填写；同一事实不得重复登记，不得为凑格式虚构事件或重大转折。`;
 
 export const DEFAULT_SETTINGS = {
     version: 1,
@@ -62,7 +64,7 @@ export function normalizeSettings(raw) {
                         enabled: flag(prompt.enabled, true),
                         depth: whole(prompt.depth, 0),
                         role: prompt.role in ROLES ? prompt.role : "system",
-                        text: text(prompt.text, ""),
+                        text: profile.id === "daliang" && prompt.id === "update" && prompt.text === UPDATE_V1 ? UPDATE : text(prompt.text, ""),
                     })),
             })),
     };

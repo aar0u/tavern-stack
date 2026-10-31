@@ -54,6 +54,20 @@ test("settings from disk are completed, and the user's profiles are kept", () =>
     assert.deepEqual(normalizeSettings({ profiles: [] }).profiles, [], "no profile at all is the user's choice");
 });
 
+test("the social format rule upgrades only the unchanged default prompt", () => {
+    const old = clone(DEFAULT_SETTINGS);
+    const update = old.profiles[0].prompts[1];
+    update.text = "【落卷】每轮正文之后必须输出一个 <UpdateVariable> 块，含 <Analysis> 和 <JSONPatch>。本轮没有变量变化时，JSONPatch 写 []，不得省略整个块。";
+    const upgraded = normalizeSettings(old);
+    const rule = activePrompts(upgraded, "大凉龙虎传v4.15").find((prompt) => prompt.key.endsWith(":update")).text;
+    assert.match(rule, /kind 必须在 value 顶层/);
+    assert.match(rule, /禁止用.*signature.*包装待办/);
+    assert.match(rule, /同一事实不得重复登记/);
+    update.text = "My custom prompt";
+    assert.equal(normalizeSettings(old).profiles[0].prompts[1].text, "My custom prompt");
+    assert.doesNotMatch(activePrompts(upgraded, "其他角色").map((prompt) => prompt.text).join(""), /好感待办格式/);
+});
+
 test("new ids do not repeat", () => {
     const taken = [{ id: "pabcde" }];
     const ids = new Set();
