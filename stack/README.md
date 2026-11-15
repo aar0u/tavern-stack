@@ -154,14 +154,7 @@ python3 -I chat-cleanup/clean_chat.py --self-test
 
 ## 工具
 
-`tools/wd-tag.sh`：图片反推标签，调 [wd-tagger Space](https://huggingface.co/spaces/SmilingWolf/wd-tagger)，图片会上传到 Space，每张 11 到 20 秒。
-
-```
-tools/wd-tag.sh                  交互：Ctrl+V 或回车读剪贴板里的图片，也可粘贴或拖入文件路径，q 退出
-tools/wd-tag.sh [-v] [-n] 图.png  标签打到标准输出并复制到剪贴板；-n 不复制，-v 加分级和置信度
-```
-
-环境变量：`WD_MODEL`、`WD_GENERAL`（0.35）、`WD_CHARACTER`（0.85）、`WD_URL`、`HF_TOKEN`、`WD_COPY=0`。
+图片反推标签工具已移至 `imagegen-stack/wd-tag.sh`。它使用 [wd-tagger Space](https://huggingface.co/spaces/SmilingWolf/wd-tagger)，会上传图片。
 
 ## 自检
 
